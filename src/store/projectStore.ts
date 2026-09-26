@@ -17,7 +17,7 @@ const DEFAULT_GLOBALS: GlobalOptions = {
   hardwareFinish: 'Standard',
   screenType: 'Half',
   thermaCoat: 'None',
-  argonGas: false,
+  argonGas: true,
 };
 
 const DEFAULT_PRICING: PricingConfig = {
@@ -29,6 +29,9 @@ const DEFAULT_PRICING: PricingConfig = {
   depositPercent: 50,
   paymentMethod: 'Check',
   showCertificationsPage: true,
+  showWindowPrices: true,
+  showDoorPrices: true,
+  showFinancing: true,
 };
 
 function newProject(): Project {

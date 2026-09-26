@@ -3,7 +3,32 @@ import { Plus, Trash2, Copy, ChevronDown, ChevronUp, DoorOpen } from 'lucide-rea
 import { useProjectStore } from '../../store/projectStore';
 import { NumInput, Select, Btn, Card, SectionHeader, Input, Toggle } from '../shared/UI';
 import { WindowStyleSVG, WINDOW_STYLE_LABELS } from '../shared/WindowStyleSVG';
-import type { HouseSide, WindowStyle, WindowEntry, SlidingDoorConfig, FrenchDoorConfig } from '../../types';
+import { doorDisplayName } from '../../utils/calculations';
+import { LOVE_THAT_DOOR_COLORS, LOVE_THAT_DOOR_GLASS_OPTIONS } from '../../data/pricing';
+import type {
+  HouseSide, WindowStyle, WindowEntry, SlidingDoorConfig, FrenchDoorConfig,
+  ObscureGlass, DoorBrand, LoveThatDoorLine, LoveThatDoorBiometric,
+} from '../../types';
+
+const OBSCURE_OPTS: { value: ObscureGlass; label: string }[] = [
+  { value: 'None', label: 'None (clear)' },
+  { value: 'P516', label: 'Standard Obscure (P516)' },
+  { value: 'EtchMatte', label: 'Etch Matte' },
+  { value: 'GlueChip', label: 'Glue Chip' },
+  { value: 'Rain', label: 'Rain' },
+  { value: 'DeltaFrost', label: 'Delta Frost' },
+  { value: 'Reed', label: 'Reed' },
+  { value: 'Flemish', label: 'Flemish' },
+];
+
+const LTD_COLOR_OPTS = LOVE_THAT_DOOR_COLORS.map((c) => ({ value: c, label: c }));
+const LTD_GLASS_OPTS = LOVE_THAT_DOOR_GLASS_OPTIONS.map((g) => ({ value: g, label: g }));
+const LTD_PANEL_OPTS = [
+  { value: '2', label: '2 Panel' },
+  { value: '3', label: '3 Panel' },
+  { value: '4', label: '4 Panel' },
+  { value: '6', label: '6 Panel' },
+];
 
 const SIDES: { value: HouseSide; label: string }[] = [
   { value: 'Front', label: 'Front' },
@@ -58,10 +83,23 @@ export default function MeasuringScreen() {
   const [qty, setQty] = useState('1');
   const [note, setNote] = useState('');
   const [geoCat, setGeoCat] = useState<1 | 2 | 3>(1);
+  const [tempered, setTempered] = useState(false);
+  const [obscure, setObscure] = useState<ObscureGlass>('None');
   const [isDoor, setIsDoor] = useState(false);
+  const [doorBrand, setDoorBrand] = useState<DoorBrand>('Anlin');
   const [doorType, setDoorType] = useState<'Sliding' | 'French'>('Sliding');
   const [slidingConfig, setSlidingConfig] = useState<SlidingDoorConfig>('XO');
   const [frenchConfig, setFrenchConfig] = useState<FrenchDoorConfig>('XO');
+  // Love That Door
+  const [ltdLine, setLtdLine] = useState<LoveThatDoorLine>('IronEntry');
+  const [ltdPanels, setLtdPanels] = useState<2 | 3 | 4 | 6>(2);
+  const [ltdColor, setLtdColor] = useState<string>('Black');
+  const [ltdGlass, setLtdGlass] = useState<string>('Clear');
+  const [ltdThermallyBroken, setLtdThermallyBroken] = useState(false);
+  const [ltdElectricGlass, setLtdElectricGlass] = useState(false);
+  const [ltdPivot, setLtdPivot] = useState(false);
+  const [ltdLongPulls, setLtdLongPulls] = useState(false);
+  const [ltdBiometric, setLtdBiometric] = useState<LoveThatDoorBiometric>('none');
   const [showList, setShowList] = useState(true);
   const [quickMode, setQuickMode] = useState(false);
   const [quickInput, setQuickInput] = useState('');
@@ -86,14 +124,16 @@ export default function MeasuringScreen() {
       quantity: Math.max(1, parseInt(qty) || 1),
       note,
       geometricCategory: style === 'Geometric' ? geoCat : undefined,
-      tempered: false,
-      obscure: 'None',
+      tempered,
+      obscure,
       extraNotes: '',
     });
     setWidth('');
     setHeight('');
     setNote('');
     setQty('1');
+    setTempered(false);
+    setObscure('None');
     widthRef.current?.focus();
   }
 
@@ -101,18 +141,42 @@ export default function MeasuringScreen() {
     const w = parseInt(width);
     const h = parseInt(height);
     if (!w || !h) return;
-    addDoor({
+    const common = {
       side,
-      doorType,
-      config: doorType === 'Sliding' ? slidingConfig : frenchConfig,
-      railStyle: 'Standard',
       width: w,
       height: h,
       quantity: Math.max(1, parseInt(qty) || 1),
       note,
       tempered: true,
       extraNotes: '',
-    });
+    };
+    if (doorBrand === 'LoveThatDoor') {
+      addDoor({
+        ...common,
+        brand: 'LoveThatDoor',
+        // doorType / config are unused for LTD but keep the shape valid
+        doorType: ltdLine === 'PatioSlider' ? 'Sliding' : 'French',
+        config: 'XO',
+        railStyle: 'Standard',
+        ltdLine,
+        ltdSliderPanels: ltdLine === 'PatioSlider' ? ltdPanels : undefined,
+        ltdColor,
+        ltdGlassOption: ltdGlass,
+        ltdThermallyBroken: ltdLine === 'IronEntry' ? ltdThermallyBroken : false,
+        ltdElectricGlass,
+        ltdPivotUpgrade: ltdLine === 'IronEntry' ? ltdPivot : false,
+        ltdLongPulls,
+        ltdBiometricLock: ltdBiometric,
+      });
+    } else {
+      addDoor({
+        ...common,
+        brand: 'Anlin',
+        doorType,
+        config: doorType === 'Sliding' ? slidingConfig : frenchConfig,
+        railStyle: 'Standard',
+      });
+    }
     setWidth('');
     setHeight('');
     setNote('');
@@ -190,7 +254,7 @@ export default function MeasuringScreen() {
             onClick={() => setIsDoor(true)}
             className="flex-1"
           >
-            <DoorOpen size={14} /> Patio Door
+            <DoorOpen size={14} /> Door
           </Btn>
           <Btn
             variant={quickMode ? 'gold' : 'secondary'}
@@ -257,6 +321,23 @@ export default function MeasuringScreen() {
               onChange={(e) => setNote(e.target.value)}
               placeholder="e.g., master bedroom, bathroom"
             />
+
+            {/* Per-opening glass options */}
+            <div className="rounded-lg border border-gray-200 p-3 space-y-3 bg-gray-50">
+              <Toggle
+                label="Tempered Glass"
+                checked={tempered}
+                onChange={setTempered}
+                description="Bathrooms, doors, low sills, tub/shower — priced & flagged per opening"
+              />
+              <Select
+                label="Frosted / Obscure Glass"
+                value={obscure}
+                onChange={(e) => setObscure(e.target.value as ObscureGlass)}
+                options={OBSCURE_OPTS}
+              />
+            </div>
+
             <Btn
               variant="gold"
               size="lg"
@@ -269,24 +350,85 @@ export default function MeasuringScreen() {
           </Card>
         ) : (
           <Card className="p-4 space-y-4">
-            <SectionHeader title={`Add Patio Door — ${side} Side`} />
+            <SectionHeader title={`Add Door — ${side} Side`} />
+
+            {/* Brand / vendor */}
             <div className="grid grid-cols-2 gap-3">
-              <Btn variant={doorType === 'Sliding' ? 'primary' : 'secondary'} onClick={() => setDoorType('Sliding')}>Sliding</Btn>
-              <Btn variant={doorType === 'French' ? 'primary' : 'secondary'} onClick={() => setDoorType('French')}>French Swing</Btn>
+              <Btn variant={doorBrand === 'Anlin' ? 'primary' : 'secondary'} onClick={() => setDoorBrand('Anlin')}>Anlin</Btn>
+              <Btn variant={doorBrand === 'LoveThatDoor' ? 'primary' : 'secondary'} onClick={() => setDoorBrand('LoveThatDoor')}>Love That Door</Btn>
             </div>
-            <Select
-              label="Configuration"
-              value={doorType === 'Sliding' ? slidingConfig : frenchConfig}
-              onChange={(e) => {
-                if (doorType === 'Sliding') setSlidingConfig(e.target.value as SlidingDoorConfig);
-                else setFrenchConfig(e.target.value as FrenchDoorConfig);
-              }}
-              options={doorType === 'Sliding' ? SLIDING_CONFIGS : FRENCH_CONFIGS}
-            />
+
+            {doorBrand === 'Anlin' ? (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <Btn variant={doorType === 'Sliding' ? 'primary' : 'secondary'} onClick={() => setDoorType('Sliding')}>Sliding</Btn>
+                  <Btn variant={doorType === 'French' ? 'primary' : 'secondary'} onClick={() => setDoorType('French')}>French Swing</Btn>
+                </div>
+                <Select
+                  label="Configuration"
+                  value={doorType === 'Sliding' ? slidingConfig : frenchConfig}
+                  onChange={(e) => {
+                    if (doorType === 'Sliding') setSlidingConfig(e.target.value as SlidingDoorConfig);
+                    else setFrenchConfig(e.target.value as FrenchDoorConfig);
+                  }}
+                  options={doorType === 'Sliding' ? SLIDING_CONFIGS : FRENCH_CONFIGS}
+                />
+              </>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <Btn variant={ltdLine === 'IronEntry' ? 'primary' : 'secondary'} onClick={() => setLtdLine('IronEntry')}>Front Iron Entry</Btn>
+                  <Btn variant={ltdLine === 'PatioSlider' ? 'primary' : 'secondary'} onClick={() => setLtdLine('PatioSlider')}>Back Patio Slider</Btn>
+                </div>
+                <p className="text-xs text-gray-500 -mt-2">Priced by square foot · $85/sq ft + $250 hardware + $300 delivery</p>
+                {ltdLine === 'PatioSlider' && (
+                  <Select
+                    label="Slider Configuration"
+                    value={String(ltdPanels)}
+                    onChange={(e) => setLtdPanels(parseInt(e.target.value) as 2 | 3 | 4 | 6)}
+                    options={LTD_PANEL_OPTS}
+                  />
+                )}
+                <div className="grid grid-cols-2 gap-3">
+                  <Select label="Color" value={ltdColor} onChange={(e) => setLtdColor(e.target.value)} options={LTD_COLOR_OPTS} />
+                  <Select label="Glass Option" value={ltdGlass} onChange={(e) => setLtdGlass(e.target.value)} options={LTD_GLASS_OPTS} />
+                </div>
+              </>
+            )}
+
             <div className="grid grid-cols-2 gap-3">
               <NumInput label="Width (inches)" value={width} onChange={setWidth} unit="in" />
               <NumInput label="Height (inches)" value={height} onChange={setHeight} unit="in" />
             </div>
+
+            {doorBrand === 'LoveThatDoor' && (
+              <div className="rounded-lg border border-gray-200 p-3 space-y-3 bg-gray-50">
+                {width && height && (
+                  <p className="text-xs text-gray-500">
+                    {(parseInt(width || '0') * parseInt(height || '0') / 144).toFixed(1)} sq ft
+                  </p>
+                )}
+                {ltdLine === 'IronEntry' && (
+                  <>
+                    <Toggle label="Thermally Broken (+20% door)" checked={ltdThermallyBroken} onChange={setLtdThermallyBroken} />
+                    <Toggle label="Pivot System Upgrade (+$1,000)" checked={ltdPivot} onChange={setLtdPivot} />
+                  </>
+                )}
+                <Toggle label="Electric Glass Upgrade (+$25/sq ft)" checked={ltdElectricGlass} onChange={setLtdElectricGlass} />
+                <Toggle label="Long Pulls 48/60/96&quot; (+$200)" checked={ltdLongPulls} onChange={setLtdLongPulls} />
+                <Select
+                  label="Biometric Lock"
+                  value={ltdBiometric}
+                  onChange={(e) => setLtdBiometric(e.target.value as LoveThatDoorBiometric)}
+                  options={[
+                    { value: 'none', label: 'None' },
+                    { value: 'standard', label: 'Biometric (+$300)' },
+                    { value: 'wifi', label: 'Biometric + Wi-Fi (+$400)' },
+                  ]}
+                />
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-3">
               <NumInput label="Quantity" value={qty} onChange={setQty} min={1} />
               <Input label="Note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="location..." />
@@ -328,12 +470,12 @@ export default function MeasuringScreen() {
                 {doors.length > 0 && (
                   <div>
                     <div className="px-4 py-2 text-xs font-semibold border-b bg-amber-50 text-amber-800 border-amber-200">
-                      Patio Doors ({doors.length})
+                      Doors ({doors.length})
                     </div>
                     {doors.map((d) => (
                       <div key={d.id} className="flex items-center justify-between px-4 py-3">
                         <div>
-                          <span className="font-medium text-sm">{d.doorType} Door – {d.config}</span>
+                          <span className="font-medium text-sm">{doorDisplayName(d)}</span>
                           <span className="text-gray-400 text-xs ml-2">{d.width}×{d.height} | {d.side} | qty {d.quantity}</span>
                           {d.note && <p className="text-xs text-gray-400">{d.note}</p>}
                         </div>
@@ -390,6 +532,7 @@ function WindowRow({
           Qty: {w.quantity}
           {w.note && ` · ${w.note}`}
           {w.tempered && ' · Tempered'}
+          {w.obscure !== 'None' && ` · ${w.obscure}`}
         </div>
       </div>
       <div className="flex gap-1 ml-2">

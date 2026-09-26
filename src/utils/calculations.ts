@@ -1,5 +1,5 @@
 import type {
-  WindowEntry, PatioDoortEntry, GlobalOptions,
+  WindowEntry, PatioDoortEntry, GlobalOptions, Adder,
   WindowSeries, FrameType, FrameColor, GlassPackage,
   GridStyle, ObscureGlass, ScreenType, GeometricCategory,
   PricingConfig, ProjectTotals, PriceBreakdown,
@@ -15,8 +15,12 @@ import {
   SLIDING_DOOR_3PANEL_BRACKETS, SLIDING_DOOR_3PANEL_BASE,
   SLIDING_DOOR_4PANEL_BRACKETS, SLIDING_DOOR_4PANEL_BASE,
   FRENCH_SINGLE_X, FRENCH_XO_OX, FRENCH_XX, FRENCH_OXO,
-  FLAT_OPTIONS, COLOR_UPCHARGE, THERMA_COAT_UPCHARGE,
+  SLIDING_DOOR_3PANEL_GLAZING, SLIDING_DOOR_4PANEL_GLAZING,
+  FRENCH_SINGLE_X_GLAZING, FRENCH_XO_OX_XX_GLAZING, FRENCH_OXO_GLAZING,
+  type DoorGlazingAdders,
+  FLAT_OPTIONS, COLOR_UPCHARGE, THERMA_COAT_UPCHARGE, DESIGNER_BLACK, DESIGNER_BLACK_UPCHARGE,
   HPR_COST_MULTIPLIER, LABOR_COST_PER_WINDOW,
+  LOVE_THAT_DOOR_PRICING, ANLIN_DOOR_INSTALL_COST, LOVE_THAT_DOOR_INSTALL_COST, FINANCING,
 } from '../data/pricing';
 
 function findBracketIndex(ui: number, brackets: readonly { min: number; max: number }[]): number | null {
@@ -26,16 +30,61 @@ function findBracketIndex(ui: number, brackets: readonly { min: number; max: num
   return null;
 }
 
-function findBracketBase(ui: number, table: { min: number; max: number; base: number }[]): number | null {
-  for (const row of table) {
-    if (ui >= row.min && ui <= row.max) return row.base;
-  }
-  return null;
-}
-
 // Resolve effective option for a window (per-window override or global)
 function effective<T>(perWindow: T | undefined, global: T): T {
   return perWindow !== undefined ? perWindow : global;
+}
+
+// Frame color + ThermaCoat price multiplier. Designer Black replaces both (11% over ThermaCoat).
+export function windowColorMultiplier(color: FrameColor, thermaCoat: string): number {
+  if (color === DESIGNER_BLACK) return DESIGNER_BLACK_UPCHARGE;
+  const thermaMultiplier = thermaCoat !== 'None' ? THERMA_COAT_UPCHARGE : 1;
+  return (COLOR_UPCHARGE[color] ?? 1) * thermaMultiplier;
+}
+
+// Glass / obscure / tempered / grid / sound / argon adders for a UI bracket.
+// Geometrics: the price book adds a $165 "pattern charge for tempered glass" on top of the UI-list tempered adder.
+function glazingAdders(
+  bIdx: number,
+  window: WindowEntry,
+  o: { glass: GlassPackage; grids: GridStyle; sound: boolean; argon: boolean },
+  geometric = false,
+): number {
+  let add = 0;
+
+  if (o.glass === 'Infinit-e') add += GLAZING_ADDERS.InfiniteE[bIdx];
+  else if (o.glass === 'SunMatrix') add += GLAZING_ADDERS.SunMatrix[bIdx];
+  else if (o.glass === 'SunShield') add += GLAZING_ADDERS.SunShield[bIdx];
+
+  if (window.tempered) {
+    add += GLAZING_ADDERS.Tempered[bIdx];
+    if (geometric) add += FLAT_OPTIONS.GeometricTemperedPattern;
+  }
+
+  if (window.obscure !== 'None') {
+    const specialPatterns: ObscureGlass[] = ['EtchMatte', 'GlueChip', 'Rain', 'DeltaFrost', 'Reed', 'Flemish'];
+    add += specialPatterns.includes(window.obscure) ? GLAZING_ADDERS.ObscureSpecial[bIdx] : GLAZING_ADDERS.ObscureStd[bIdx];
+  }
+
+  if (o.grids === 'FlatColonial') add += GLAZING_ADDERS.GridsFlat[bIdx];
+  else if (o.grids === 'SculpturedColonial' || o.grids === 'SculpturedInch') add += GLAZING_ADDERS.GridsSculpt[bIdx];
+
+  if (o.sound) add += GLAZING_ADDERS.SoundPkg[bIdx];
+  if (o.argon) add += GLAZING_ADDERS.ArgonGas[bIdx];
+
+  return add;
+}
+
+// ThermaCoat is active unless it's "None" or the window is Designer Black (which excludes ThermaCoat).
+export function thermaCoatActive(window: WindowEntry, globals: GlobalOptions): boolean {
+  const color = effective(window.frameColorOverride, globals.frameColor);
+  return color !== DESIGNER_BLACK && effective(window.thermaCoatOverride, globals.thermaCoat) !== 'None';
+}
+
+// ThermaCoat windows can only have Flat Colonial grids (or none).
+export function effectiveGridStyle(window: WindowEntry, globals: GlobalOptions): GridStyle {
+  const grids = effective(window.gridOverride, globals.grids);
+  return grids !== 'None' && thermaCoatActive(window, globals) ? 'FlatColonial' : grids;
 }
 
 export function calcWindowListPrice(
@@ -47,10 +96,10 @@ export function calcWindowListPrice(
   const frame = effective(window.frameTypeOverride, globals.frameType);
   const color = effective(window.frameColorOverride, globals.frameColor);
   const glass = effective(window.glassOverride, globals.glassPackage);
-  const grids = effective(window.gridOverride, globals.grids);
+  const grids = effectiveGridStyle(window, globals);
   const screen = effective(window.screenOverride, globals.screenType);
   const sound = effective(window.soundPackageOverride, globals.soundPackage);
-  const argon = effective(window.argonOverride, globals.argonGas);
+  const argon = true; // Argon gas is standard on all Anlin windows (no longer optional)
   const thermaCoat = effective(window.thermaCoatOverride, globals.thermaCoat);
 
   let base: number | null = null;
@@ -63,8 +112,11 @@ export function calcWindowListPrice(
     const rate = GEOMETRIC_RATES[seriesKey][cat][frameKey as keyof typeof GEOMETRIC_RATES['CatPan'][1]];
     if (rate == null) return null;
     base = rate * ui;
-    const thermaMultiplier = thermaCoat !== 'None' ? THERMA_COAT_UPCHARGE : 1;
-    return base * (COLOR_UPCHARGE[color] ?? 1) * thermaMultiplier;
+    // Glazing options apply to geometrics too, priced off the UI bracket.
+    const gIdx = getUiBracketIndex(ui);
+    if (gIdx === null) return null;
+    base += glazingAdders(gIdx, window, { glass, grids, sound, argon }, true);
+    return Math.round(base * windowColorMultiplier(color, thermaCoat) * 100) / 100;
   }
 
   // ── Casement / Awning (Coronado only) ──
@@ -124,52 +176,11 @@ export function calcWindowListPrice(
     }
 
     // ── Glazing adders ──
-    const bIdxForGlaze = bIdx;
-
-    // Glass upgrade adder
-    if (glass === 'Infinit-e') {
-      base += GLAZING_ADDERS.InfiniteE[bIdxForGlaze];
-    } else if (glass === 'SunMatrix') {
-      base += GLAZING_ADDERS.SunMatrix[bIdxForGlaze];
-    } else if (glass === 'SunShield') {
-      base += GLAZING_ADDERS.SunShield[bIdxForGlaze];
-    }
-
-    // Tempered
-    if (window.tempered) {
-      base += GLAZING_ADDERS.Tempered[bIdxForGlaze];
-    }
-
-    // Obscure glass
-    if (window.obscure !== 'None') {
-      const specialPatterns: ObscureGlass[] = ['EtchMatte', 'GlueChip', 'Rain', 'DeltaFrost', 'Reed', 'Flemish'];
-      if (specialPatterns.includes(window.obscure)) {
-        base += GLAZING_ADDERS.ObscureSpecial[bIdxForGlaze];
-      } else {
-        base += GLAZING_ADDERS.ObscureStd[bIdxForGlaze];
-      }
-    }
-
-    // Grids
-    if (grids === 'FlatColonial') {
-      base += GLAZING_ADDERS.GridsFlat[bIdxForGlaze];
-    } else if (grids === 'SculpturedColonial' || grids === 'SculpturedInch') {
-      base += GLAZING_ADDERS.GridsSculpt[bIdxForGlaze];
-    }
-
-    // Sound package
-    if (sound) {
-      base += GLAZING_ADDERS.SoundPkg[bIdxForGlaze];
-    }
-
-    // Argon gas
-    if (argon) {
-      base += GLAZING_ADDERS.ArgonGas[bIdxForGlaze];
-    }
+    base += glazingAdders(bIdx, window, { glass, grids, sound, argon });
 
     // Screen (full screen is upgrade; half screen included)
     if (screen === 'Full' && window.style !== 'PW') {
-      base += SCREEN_PRICES[bIdxForGlaze];
+      base += SCREEN_PRICES[bIdx];
     }
 
     // Hardware
@@ -192,8 +203,7 @@ export function calcWindowListPrice(
   }
 
   // Color upcharge
-  const thermaMultiplier = thermaCoat !== 'None' ? THERMA_COAT_UPCHARGE : 1;
-  base = base * (COLOR_UPCHARGE[color] ?? 1) * thermaMultiplier;
+  base = base * windowColorMultiplier(color, thermaCoat);
 
   return Math.round(base * 100) / 100;
 }
@@ -202,11 +212,17 @@ export function calcWindowCostAndSell(
   listPrice: number,
   quantity: number,
   margin: number,
+  opts?: { laborPerUnit?: number; listIsCost?: boolean; adderPerUnit?: number; adderCostPerUnit?: number },
 ): { hprCost: number; laborCost: number; totalCost: number; sellPrice: number; lineTotal: number; lineCost: number } {
-  const hprCost = listPrice * HPR_COST_MULTIPLIER;
-  const laborCost = LABOR_COST_PER_WINDOW;
-  const totalCostPerUnit = hprCost + laborCost;
-  const sellPricePerUnit = totalCostPerUnit / (1 - margin);
+  // For Anlin the price table is a retail "list" price and HPR pays a fraction of it.
+  // For vendors whose guide price is already HPR's cost (e.g. Love That Door), pass listIsCost.
+  const hprCost = opts?.listIsCost ? listPrice : listPrice * HPR_COST_MULTIPLIER;
+  const laborCost = opts?.laborPerUnit ?? LABOR_COST_PER_WINDOW;
+  const baseCostPerUnit = hprCost + laborCost;
+  const totalCostPerUnit = baseCostPerUnit + (opts?.adderCostPerUnit ?? 0);
+  // Adders are billed to the customer as entered (no markup). Their cost counts toward HPR cost only,
+  // so it does not feed the margin-based sell price.
+  const sellPricePerUnit = baseCostPerUnit / (1 - margin) + (opts?.adderPerUnit ?? 0);
   return {
     hprCost,
     laborCost,
@@ -217,7 +233,97 @@ export function calcWindowCostAndSell(
   };
 }
 
+// ── Love That Door — priced by square foot (see LOVE_THAT_DOOR_PRICING) ──
+// Returns the vendor guide total, which is treated as HPR cost downstream.
+export function calcLoveThatDoorPrice(door: PatioDoortEntry): number | null {
+  const sqFt = (door.width * door.height) / 144;
+  if (!sqFt || sqFt <= 0) return null;
+  const P = LOVE_THAT_DOOR_PRICING;
+
+  let doorPortion = sqFt * P.pricePerSqFt;
+  if (door.ltdThermallyBroken) doorPortion *= 1 + P.thermallyBrokenUpcharge;
+
+  let total = doorPortion + P.hardwarePerSet + P.delivery;
+  if (door.ltdElectricGlass) total += sqFt * P.electricGlassPerSqFt;
+  if (door.ltdPivotUpgrade) total += P.pivotUpgrade;
+  if (door.ltdLongPulls) total += P.longPulls;
+  if (door.ltdBiometricLock === 'standard') total += P.biometricLock;
+  else if (door.ltdBiometricLock === 'wifi') total += P.biometricLockWifi;
+
+  return Math.round(total * 100) / 100;
+}
+
+// Per-vendor cost model for a door line item.
+// Anlin: guide value is retail list -> HPR pays HPR_COST_MULTIPLIER of it.
+// Love That Door: guide value is already HPR's cost.
+export function adderPerUnit(item: { adders?: Adder[] }): number {
+  return (item.adders ?? []).reduce((sum, a) => sum + (a.price || 0), 0);
+}
+
+export function adderCostPerUnit(item: { adders?: Adder[] }): number {
+  return (item.adders ?? []).reduce((sum, a) => sum + (a.cost ?? 0), 0);
+}
+
+export function getWindowCostParams(w: WindowEntry): { adderPerUnit: number; adderCostPerUnit: number } {
+  return { adderPerUnit: adderPerUnit(w), adderCostPerUnit: adderCostPerUnit(w) };
+}
+
+export function getDoorCostParams(door: PatioDoortEntry): { laborPerUnit: number; listIsCost: boolean; adderPerUnit: number; adderCostPerUnit: number } {
+  if ((door.brand ?? 'Anlin') === 'LoveThatDoor') {
+    return { laborPerUnit: LOVE_THAT_DOOR_INSTALL_COST, listIsCost: true, adderPerUnit: adderPerUnit(door), adderCostPerUnit: adderCostPerUnit(door) };
+  }
+  return { laborPerUnit: ANLIN_DOOR_INSTALL_COST, listIsCost: false, adderPerUnit: adderPerUnit(door), adderCostPerUnit: adderCostPerUnit(door) };
+}
+
+// Display label for a door line item, shared by the schedule, proposal and PDF.
+export function doorDisplayName(d: PatioDoortEntry): string {
+  if ((d.brand ?? 'Anlin') === 'LoveThatDoor') {
+    if (d.ltdLine === 'PatioSlider') {
+      return `Love That Door — Euro Slider${d.ltdSliderPanels ? ` (${d.ltdSliderPanels}-Panel)` : ''}`;
+    }
+    return 'Love That Door — Iron Entry';
+  }
+  return `${d.doorType} Door – ${d.config}`;
+}
+
+// ThermaCoat on a door is set per door only (window globals don't apply). Designer Black excludes it.
+export function doorThermaCoatActive(door: PatioDoortEntry, globals: GlobalOptions): boolean {
+  const color = effective(door.frameColorOverride, globals.frameColor);
+  return color !== DESIGNER_BLACK && (door.thermaCoatOverride ?? 'None') !== 'None';
+}
+
+// ThermaCoat doors can only have Flat Colonial grids (or none).
+export function doorEffectiveGridStyle(door: PatioDoortEntry, globals: GlobalOptions): GridStyle {
+  const grids = effective(door.gridOverride, globals.grids);
+  return grids !== 'None' && doorThermaCoatActive(door, globals) ? 'FlatColonial' : grids;
+}
+
+function doorGlazingAdders(
+  a: DoorGlazingAdders,
+  idx: number,
+  door: PatioDoortEntry,
+  globals: GlobalOptions,
+): number {
+  let add = 0;
+  const glass = effective(door.glassOverride, globals.glassPackage);
+  if (glass === 'Infinit-e') add += a.InfiniteE[idx];
+  else if (glass === 'SunMatrix') add += a.SunMatrix[idx];
+  else if (glass === 'SunShield') add += a.SunShield[idx];
+
+  const grids = doorEffectiveGridStyle(door, globals);
+  if (grids === 'FlatColonial') add += a.GridsFlat[idx];
+  else if (grids === 'SculpturedColonial' || grids === 'SculpturedInch') add += a.GridsSculpt[idx];
+
+  // Argon gas is standard on all Anlin doors (always included in the price)
+  add += a.ArgonGas[idx];
+  return add;
+}
+
 export function calcDoorListPrice(door: PatioDoortEntry, globals: GlobalOptions): number | null {
+  if ((door.brand ?? 'Anlin') === 'LoveThatDoor') {
+    return calcLoveThatDoorPrice(door);
+  }
+
   const ui = door.width + door.height;
   const color = effective(door.frameColorOverride, globals.frameColor);
 
@@ -228,40 +334,41 @@ export function calcDoorListPrice(door: PatioDoortEntry, globals: GlobalOptions)
     if (config === 'XO' || config === 'OX') {
       const bIdx = findBracketIndex(ui, SLIDING_DOOR_2PANEL_BRACKETS);
       if (bIdx === null) return null;
-      base = SLIDING_DOOR_2PANEL.base[bIdx];
-      // Glass adder
-      const glass = effective(door.glassOverride, globals.glassPackage);
-      if (glass === 'Infinit-e') base += SLIDING_DOOR_2PANEL.InfiniteE[bIdx];
-      else if (glass === 'SunMatrix') base += SLIDING_DOOR_2PANEL.SunMatrix[bIdx];
-      else if (glass === 'SunShield') base += SLIDING_DOOR_2PANEL.SunShield[bIdx];
-      // Grids
-      const grids = effective(door.gridOverride, globals.grids);
-      if (grids === 'FlatColonial') base += SLIDING_DOOR_2PANEL.GridsFlat[bIdx];
-      else if (grids === 'SculpturedColonial' || grids === 'SculpturedInch') base += SLIDING_DOOR_2PANEL.GridsSculpt[bIdx];
-      // Argon
-      if (effective(door.argonOverride, globals.argonGas)) base += SLIDING_DOOR_2PANEL.ArgonGas[bIdx];
+      base = SLIDING_DOOR_2PANEL.base[bIdx] + doorGlazingAdders(SLIDING_DOOR_2PANEL, bIdx, door, globals);
     } else if (config === 'XOO' || config === 'OOX' || config === 'OXO') {
       const bIdx = findBracketIndex(ui, SLIDING_DOOR_3PANEL_BRACKETS);
       if (bIdx === null) return null;
-      base = SLIDING_DOOR_3PANEL_BASE[bIdx];
+      base = SLIDING_DOOR_3PANEL_BASE[bIdx] + doorGlazingAdders(SLIDING_DOOR_3PANEL_GLAZING, bIdx, door, globals);
     } else if (config === 'OXXO') {
       const bIdx = findBracketIndex(ui, SLIDING_DOOR_4PANEL_BRACKETS);
       if (bIdx === null) return null;
-      base = SLIDING_DOOR_4PANEL_BASE[bIdx];
+      base = SLIDING_DOOR_4PANEL_BASE[bIdx] + doorGlazingAdders(SLIDING_DOOR_4PANEL_GLAZING, bIdx, door, globals);
     }
+    if (base == null) return null;
+
+    // Sliding handle / lock options
+    if (door.slidingHandleStyle === 'Interior') base += FLAT_OPTIONS.HandleFinishIntOnly;
+    else if (door.slidingHandleStyle === 'InteriorExterior') base += FLAT_OPTIONS.HandleFinishIntExt;
+    if (door.quadLock) base += FLAT_OPTIONS.QuadLock;
+    else if (door.keyedCylinder) {
+      base += FLAT_OPTIONS.KeyedLockCylinder;
+      if (door.extPullHandle) base += FLAT_OPTIONS.ExtPullHandle;
+    }
+    if (door.deadBolt) base += FLAT_OPTIONS.DeadBoltUpperVent;
+    if (door.stainlessRollers) base += FLAT_OPTIONS.StainlessRollers;
   } else {
     // French doors
     const config = door.config as string;
-    if (config === 'X') {
-      base = findBracketBase(ui, FRENCH_SINGLE_X);
-    } else if (config === 'XO' || config === 'OX') {
-      base = findBracketBase(ui, FRENCH_XO_OX);
-    } else if (config === 'XX') {
-      base = findBracketBase(ui, FRENCH_XX);
-    } else if (config === 'OXO') {
-      base = findBracketBase(ui, FRENCH_OXO);
-    }
-    if (base == null) return null;
+    let glazing: DoorGlazingAdders | null = null;
+    let table: { min: number; max: number; base: number }[] | null = null;
+    if (config === 'X') { table = FRENCH_SINGLE_X; glazing = FRENCH_SINGLE_X_GLAZING; }
+    else if (config === 'XO' || config === 'OX') { table = FRENCH_XO_OX; glazing = FRENCH_XO_OX_XX_GLAZING; }
+    else if (config === 'XX') { table = FRENCH_XX; glazing = FRENCH_XO_OX_XX_GLAZING; }
+    else if (config === 'OXO') { table = FRENCH_OXO; glazing = FRENCH_OXO_GLAZING; }
+    if (!table || !glazing) return null;
+    const bIdx = findBracketIndex(ui, table);
+    if (bIdx === null) return null;
+    base = table[bIdx].base + doorGlazingAdders(glazing, bIdx, door, globals);
     // French door adders
     if (door.overHeight) {
       base += door.panelCount === 2
@@ -277,8 +384,8 @@ export function calcDoorListPrice(door: PatioDoortEntry, globals: GlobalOptions)
     }
   }
 
-  if (base == null) return null;
-  return Math.round(base * (COLOR_UPCHARGE[color] ?? 1) * 100) / 100;
+  const thermaCoat = doorThermaCoatActive(door, globals) ? door.thermaCoatOverride! : 'None';
+  return Math.round(base * windowColorMultiplier(color, thermaCoat) * 100) / 100;
 }
 
 export function calcAllBreakdowns(
@@ -293,7 +400,7 @@ export function calcAllBreakdowns(
     const list = calcWindowListPrice(w, globals);
     if (list == null) continue;
     const { hprCost, laborCost, totalCost, sellPrice, lineTotal, lineCost } =
-      calcWindowCostAndSell(list, w.quantity, margin);
+      calcWindowCostAndSell(list, w.quantity, margin, getWindowCostParams(w));
     results.push({
       windowId: w.id,
       listPrice: list,
@@ -311,7 +418,7 @@ export function calcAllBreakdowns(
     const list = calcDoorListPrice(d, globals);
     if (list == null) continue;
     const { hprCost, laborCost, totalCost, sellPrice, lineTotal, lineCost } =
-      calcWindowCostAndSell(list, d.quantity, margin);
+      calcWindowCostAndSell(list, d.quantity, margin, getDoorCostParams(d));
     results.push({
       windowId: d.id,
       listPrice: list,
@@ -372,6 +479,17 @@ export function calcProjectTotals(
     windowSillTotal,
     depositAmount,
   };
+}
+
+// Low monthly payment option: the project total up to the financing cap is amortized at the
+// financing APR over the term. Anything over the cap is shown as a deposit.
+export function calcFinancing(total: number): { financed: number; deposit: number; monthly: number } {
+  const financed = Math.min(Math.max(total, 0), FINANCING.monthlyMaxFinanced);
+  const deposit = Math.max(total - FINANCING.monthlyMaxFinanced, 0);
+  const r = FINANCING.monthlyApr / 12;
+  const n = FINANCING.monthlyTermYears * 12;
+  const monthly = financed <= 0 ? 0 : (financed * r) / (1 - Math.pow(1 + r, -n));
+  return { financed, deposit, monthly };
 }
 
 export function formatCurrency(val: number): string {

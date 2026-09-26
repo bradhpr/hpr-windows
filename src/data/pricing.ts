@@ -155,6 +155,34 @@ export const SLIDING_DOOR_4PANEL_BRACKETS = [
 ];
 export const SLIDING_DOOR_4PANEL_BASE = [3103, 3392, 3567, 3867, 4608, 4781, 5244, 5706];
 
+// Glass / grid / argon adders by patio door bracket (same row order as the bracket tables).
+export interface DoorGlazingAdders {
+  SunMatrix: readonly number[];
+  InfiniteE: readonly number[];
+  SunShield: readonly number[];
+  GridsFlat: readonly number[];
+  GridsSculpt: readonly number[];
+  ArgonGas: readonly number[];
+}
+
+export const SLIDING_DOOR_3PANEL_GLAZING: DoorGlazingAdders = {
+  SunMatrix:   [493, 604, 640, 716, 827, 880, 990],
+  InfiniteE:   [340, 416, 441, 493, 571, 607, 683],
+  SunShield:   [390, 479, 507, 568, 657, 696, 786],
+  GridsFlat:   [216, 248, 281, 309, 347, 386, 424],
+  GridsSculpt: [324, 380, 419, 462, 511, 560, 609],
+  ArgonGas:    [139, 170, 193, 232, 293, 352, 413],
+};
+
+export const SLIDING_DOOR_4PANEL_GLAZING: DoorGlazingAdders = {
+  SunMatrix:   [493, 604, 640, 716, 827, 880, 990, 1102],
+  InfiniteE:   [340, 416, 441, 493, 571, 607, 683, 760],
+  SunShield:   [390, 479, 507, 568, 657, 696, 786, 876],
+  GridsFlat:   [216, 248, 281, 309, 347, 386, 424, 462],
+  GridsSculpt: [324, 380, 419, 462, 511, 560, 609, 657],
+  ArgonGas:    [139, 170, 193, 232, 293, 352, 413, 474],
+};
+
 // ─── FRENCH SWINGING DOORS ────────────────────────────────────────────────────
 export const FRENCH_SINGLE_X = [
   { min: 100, max: 112, base: 2161 },
@@ -175,17 +203,45 @@ export const FRENCH_OXO = [
   { min: 194, max: 216, base: 4497 },
 ];
 
+export const FRENCH_SINGLE_X_GLAZING: DoorGlazingAdders = {
+  SunMatrix:   [315, 358],
+  InfiniteE:   [217, 247],
+  SunShield:   [238, 271],
+  GridsFlat:   [110, 137],
+  GridsSculpt: [163, 204],
+  ArgonGas:    [93, 108],
+};
+// XO / OX and XX share the same glazing adders.
+export const FRENCH_XO_OX_XX_GLAZING: DoorGlazingAdders = {
+  SunMatrix:   [358, 448],
+  InfiniteE:   [247, 309],
+  SunShield:   [271, 340],
+  GridsFlat:   [182, 204],
+  GridsSculpt: [273, 397],
+  ArgonGas:    [124, 170],
+};
+export const FRENCH_OXO_GLAZING: DoorGlazingAdders = {
+  SunMatrix:   [448, 493, 604, 640],
+  InfiniteE:   [309, 340, 416, 441],
+  SunShield:   [340, 373, 458, 485],
+  GridsFlat:   [204, 319, 357, 412],
+  GridsSculpt: [397, 479, 535, 617],
+  ArgonGas:    [159, 209, 239, 276],
+};
+
 // ─── FLAT OPTION PRICES ───────────────────────────────────────────────────────
 export const FLAT_OPTIONS = {
   TrueActionLock: 13.90,
   ArchLock: 22.20,
   SashDeadBolt: 38.60,
   WindowLimitingDevice: 21.00,
+  GeometricTemperedPattern: 165.00, // price book: pattern charge for tempered glass on geometrics, added to UI-list tempered
   CustomVentSize: 19.80,
   FactoryMullionPerFoot: 44.00,
   // Patio door options
   QuadLock: 250,
   KeyedLockCylinder: 30,
+  ExtPullHandle: 47,          // for keyed cylinder
   HandleFinishIntOnly: 204,
   HandleFinishIntExt: 250,
   DeadBoltUpperVent: 62,
@@ -196,18 +252,106 @@ export const FLAT_OPTIONS = {
   FrenchArchFinishXX: 330,
   FrenchOperableSideLite: 650,
 } as const;
-
-// ─── COLOR UPCHARGE MULTIPLIER ────────────────────────────────────────────────
+// ─── COLOR PRICING MULTIPLIER ─────────────────────────────────────────────────
+// White, Adobe and Tan are priced identically so all three cost the homeowner the same.
 export const COLOR_UPCHARGE: Record<string, number> = {
-  White: 1.0,
+  White: 1.04,
   Adobe: 1.04,
   Tan: 1.04,
 };
 
 export const THERMA_COAT_UPCHARGE = 1.59;
 
+// Designer Black: material price is 11% more than ThermaCoat. It replaces the frame-color
+// upcharge and ThermaCoat entirely (neither is available with Designer Black).
+export const DESIGNER_BLACK = 'Designer Black';
+export const DESIGNER_BLACK_UPCHARGE = THERMA_COAT_UPCHARGE * 1.11;
+
+// ─── LOVE THAT DOOR PRICING (priced by SQUARE FOOT, not United Inches) ────────
+// Partnership pricing matrix, guide dated 9-18-2025.
+// sq ft = (width in inches × height in inches) / 144
+// Total = door portion ($/sq ft) + hardware/set + delivery, plus any upgrades.
+// The guide price is what HPR pays (cost), not a marked-up list price.
+export const LOVE_THAT_DOOR_PRICING = {
+  pricePerSqFt: 85,
+  hardwarePerSet: 250,
+  delivery: 300,
+  // Thermally-broken iron doors carry a 20% add-on applied to the per-sq-ft door
+  // portion only (verified against the guide's example prices).
+  thermallyBrokenUpcharge: 0.20,
+  electricGlassPerSqFt: 25,   // iron / steel doors
+  pivotUpgrade: 1000,         // iron doors — pivot system
+  longPulls: 200,             // 48" / 60" / 96" pulls
+  biometricLock: 300,
+  biometricLockWifi: 400,
+} as const;
+
+export const LOVE_THAT_DOOR_COLORS = [
+  'Midnight', 'Midnight w/ Copper Edges',
+  'Bronze', 'Bronze w/ Copper Edges',
+  'Black', 'Black w/ Copper Edges',
+  'Pewter', 'Amber', 'Amber w/ Copper Edges',
+] as const;
+
+export const LOVE_THAT_DOOR_GLASS_OPTIONS = [
+  'Clear', 'Old AquaTex', 'New AquaTex', 'Water Cube', 'Rain', 'Steam', 'EPI',
+  'Reeded', 'Frosted', 'Frost Bite', 'Lite Flemish', 'Smoke Reflective',
+] as const;
+
+// ─── FINANCING OPTIONS (shown on the proposal) ───────────────────────────────
+export const FINANCING = {
+  promoMonths: 18,            // Special Promo Financing: 18 months, 0% interest
+  monthlyApr: 0.099,          // Low monthly payment option
+  monthlyTermYears: 20,
+  monthlyMaxFinanced: 50000,  // financed amount is capped here; any balance over it is shown as a deposit
+  securedMaxLoan: 150000,     // secured loans available up to this amount
+} as const;
+
 // ─── BUSINESS CONSTANTS ───────────────────────────────────────────────────────
 export const HPR_COST_MULTIPLIER = 0.48;
 export const LABOR_COST_PER_WINDOW = 125;
+// Install labor is charged per door unit and varies by vendor.
+export const ANLIN_DOOR_INSTALL_COST = 500;
+export const LOVE_THAT_DOOR_INSTALL_COST = 3000;
 export const DEFAULT_MARGIN = 0.50;
 export const DEFAULT_SILL_PRICE = 75;
+
+// ─── LOVE THAT DOOR EURO SLIDER — JOB DESCRIPTION (shown on proposal + PDF) ──
+export const LTD_SLIDER_JOB_DESCRIPTION = {
+  intro:
+    'Furnish and professionally install a custom Love That Door® Euro Lift & Slide patio door. This premium aluminum door system features smooth, effortless operation, expansive glass panels, thermally broken frames, double-pane tempered Low-E glass, argon-gas insulation, enhanced security, and integrated weather sealing and drainage.',
+  scopeHeading: 'Scope includes:',
+  scope: [
+    'Final field measurement and custom ordering',
+    'Removal and disposal of the existing door',
+    'Preparation of the existing opening',
+    'Professional installation, leveling, fastening, insulation, and sealing',
+    'Installation and adjustment of all included hardware and screens',
+    'Final operation testing and jobsite cleanup',
+  ],
+  note:
+    'Pricing assumes installation within the existing opening. Structural modifications, concealed damage, masonry or stucco repairs, painting, electrical work, and permit fees are excluded unless specifically listed.',
+} as const;
+
+// ─── ANLIN WINDOW INSTALLATION SCOPE OF WORK (shown on proposal + PDF) ───────
+export const ANLIN_SCOPE_OF_WORK = {
+  heading: 'Scope of Work – Anlin Window Installation',
+  items: [
+    'Remove and properly dispose of the existing window.',
+    'Inspect the exposed sheathing and framing for rotten, damaged, or deteriorated wood. Any required wood repairs will be documented and quoted separately before work proceeds.',
+    'Prepare the existing window opening for installation.',
+    'Install the new Anlin window level, square, plumb, and securely fastened.',
+    'Apply low-expansion spray foam insulation around the window frame to help prevent air and water infiltration.',
+    'Apply a high-grade exterior sealant around the window perimeter to create a durable, weather-resistant seal.',
+    'Clean the window, remove installation debris, and test the window for proper operation and locking.',
+    'Exterior or interior trim work and painting are not included unless otherwise specified in the proposal.',
+  ],
+} as const;
+
+// Architectural finishes for lock hardware (Anlin price book: CAM or TAL lock, +$22.20 each)
+export const ARCH_FINISH_LABELS = {
+  SatinBlack: 'Satin Black',
+  Bronze: 'Bronze',
+  Brass: 'Brass',
+  Nickel: 'Nickel',
+} as const;

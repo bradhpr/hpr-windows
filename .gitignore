@@ -1,2 +1,11 @@
 node_modules/
 dist/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Local tool state
+.wrangler/
+.claude/settings.local.json

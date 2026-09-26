@@ -3,9 +3,13 @@ import { Settings2, ChevronDown, ChevronUp, Eye, EyeOff, Pencil } from 'lucide-r
 import { useProjectStore } from '../../store/projectStore';
 import { Select, Toggle, Btn, Card, SectionHeader, ColorSwatch, StatBadge } from '../shared/UI';
 import { WindowStyleSVG, WINDOW_STYLE_LABELS } from '../shared/WindowStyleSVG';
-import { calcWindowListPrice, calcWindowCostAndSell, calcDoorListPrice, calcProjectTotals, calcAllBreakdowns, formatCurrency } from '../../utils/calculations';
+import { calcWindowListPrice, calcWindowCostAndSell, calcDoorListPrice, calcProjectTotals, calcAllBreakdowns, formatCurrency, getDoorCostParams, getWindowCostParams, doorDisplayName } from '../../utils/calculations';
+import { LOVE_THAT_DOOR_COLORS, LOVE_THAT_DOOR_GLASS_OPTIONS, ARCH_FINISH_LABELS } from '../../data/pricing';
+import type { LoveThatDoorLine, LoveThatDoorBiometric, ArchFinishColor } from '../../types';
 import type { GlobalOptions, WindowEntry, ObscureGlass, ScreenType, GridStyle, WindowStyle, FrameType, FrameColor, GlassPackage, ThermaCoatColor } from '../../types';
 import WindowOverridePanel from './WindowOverridePanel';
+import AdderEditor from '../shared/AdderEditor';
+import DoorOverridePanel from './DoorOverridePanel';
 
 const SERIES_OPTS = [
   { value: 'Panoramic', label: 'Panoramic (standard)' },
@@ -13,9 +17,10 @@ const SERIES_OPTS = [
   { value: 'Coronado', label: 'Coronado (premium)' },
 ];
 const FRAME_COLOR_OPTS = [
-  { value: 'White', label: 'White (standard)' },
-  { value: 'Adobe', label: 'Adobe (+4%)' },
-  { value: 'Tan', label: 'Tan (+4%)' },
+  { value: 'White', label: 'White' },
+  { value: 'Adobe', label: 'Adobe' },
+  { value: 'Tan', label: 'Tan' },
+  { value: 'Designer Black', label: 'Designer Black' },
 ];
 const GLASS_OPTS = [
   { value: 'Infinit-e', label: 'Infinit-e (standard)' },
@@ -60,28 +65,46 @@ const THERMA_COAT_OPTS = [
   { value: 'ForestGreen', label: 'Forest Green' },
 ];
 
+const LTD_COLOR_OPTS = LOVE_THAT_DOOR_COLORS.map((c) => ({ value: c, label: c }));
+const LTD_GLASS_OPTS = LOVE_THAT_DOOR_GLASS_OPTIONS.map((g) => ({ value: g, label: g }));
+const LTD_PANEL_OPTS = [
+  { value: '2', label: '2 Panel' },
+  { value: '3', label: '3 Panel' },
+  { value: '4', label: '4 Panel' },
+  { value: '6', label: '6 Panel' },
+];
+
+const ARCH_FINISH_OPTS = Object.entries(ARCH_FINISH_LABELS).map(([value, label]) => ({ value, label }));
+
 const FRAME_COLOR_HEX: Record<string, string> = {
   White: '#FFFFFF',
   Adobe: '#C4A882',
   Tan: '#D2B48C',
+  'Designer Black': '#1C1C1C',
 };
 
 export default function ConfigScreen() {
   const {
     currentProject, updateGlobalOptions, updatePricing,
-    updateWindowSills, setPhase, internalView, toggleInternalView,
+    updateWindowSills, setPhase, internalView, toggleInternalView, updateDoor,
   } = useProjectStore();
 
   const { globalOptions: opts, windows, doors, pricing, windowSills } = currentProject;
   const [showGlobal, setShowGlobal] = useState(true);
   const [overrideWindowId, setOverrideWindowId] = useState<string | null>(null);
+  const [overrideDoorId, setOverrideDoorId] = useState<string | null>(null);
   const [showPricing, setShowPricing] = useState(true);
 
   // Compute totals
   const breakdowns = calcAllBreakdowns(windows, doors, opts, pricing.margin);
   const totals = calcProjectTotals(breakdowns, windowSills.quantity, windowSills.unitPrice, pricing, windows.length + doors.length);
 
+  const globalThermaActive = opts.thermaCoat !== 'None' && opts.frameColor !== 'Designer Black';
+  const anlinDoors = doors.filter((d) => d.brand !== 'LoveThatDoor');
+  const ltdDoors = doors.filter((d) => d.brand === 'LoveThatDoor');
+
   const overrideWindow = overrideWindowId ? windows.find((w) => w.id === overrideWindowId) : null;
+  const overrideDoor = overrideDoorId ? anlinDoors.find((d) => d.id === overrideDoorId) : null;
 
   function g(key: keyof GlobalOptions) {
     return opts[key] as string;
@@ -140,9 +163,23 @@ export default function ConfigScreen() {
                 <Select label="Glass Package" value={g('glassPackage')} onChange={(e) => updateGlobalOptions({ glassPackage: e.target.value as GlassPackage })} options={GLASS_OPTS} />
                 <Select label="Frame Type" value={g('frameType')} onChange={(e) => updateGlobalOptions({ frameType: e.target.value as FrameType })} options={FRAME_TYPE_OPTS} />
                 <Select label="Screen Type" value={g('screenType')} onChange={(e) => updateGlobalOptions({ screenType: e.target.value as ScreenType })} options={SCREEN_OPTS} />
-                <Select label="Grids" value={g('grids')} onChange={(e) => updateGlobalOptions({ grids: e.target.value as GridStyle })} options={GRID_OPTS} />
-                <Select label="Hardware / Cam Lock" value={g('hardwareLock')} onChange={(e) => updateGlobalOptions({ hardwareLock: e.target.value as GlobalOptions['hardwareLock'] })} options={HARDWARE_OPTS} />
-                <Select label="ThermaCoat Color" value={g('thermaCoat')} onChange={(e) => updateGlobalOptions({ thermaCoat: e.target.value as ThermaCoatColor })} options={THERMA_COAT_OPTS} />
+                <Select label={globalThermaActive ? 'Grids (Flat Colonial only with ThermaCoat)' : 'Grids'} value={g('grids')} onChange={(e) => updateGlobalOptions({ grids: e.target.value as GridStyle })} options={globalThermaActive ? GRID_OPTS.filter((o) => o.value === 'None' || o.value === 'FlatColonial') : GRID_OPTS} />
+                <Select label="Hardware / Cam Lock" value={g('hardwareLock')} onChange={(e) => {
+                  const hardwareLock = e.target.value as GlobalOptions['hardwareLock'];
+                  updateGlobalOptions(hardwareLock === 'ArchFinish' && opts.hardwareFinish === 'Standard'
+                    ? { hardwareLock, hardwareFinish: 'SatinBlack' }
+                    : { hardwareLock });
+                }} options={HARDWARE_OPTS} />
+                {opts.hardwareLock === 'ArchFinish' && (
+                  <Select label="Lock Hardware Arch Finish" value={opts.hardwareFinish === 'Standard' ? 'SatinBlack' : opts.hardwareFinish}
+                    onChange={(e) => updateGlobalOptions({ hardwareFinish: e.target.value as ArchFinishColor })}
+                    options={ARCH_FINISH_OPTS} />
+                )}
+                <Select label={opts.frameColor === 'Designer Black' ? 'ThermaCoat Color (not available with Designer Black)' : 'ThermaCoat Color'} disabled={opts.frameColor === 'Designer Black'} value={g('thermaCoat')} onChange={(e) => {
+                  const thermaCoat = e.target.value as ThermaCoatColor;
+                  const flatOnly = thermaCoat !== 'None' && opts.grids !== 'None' && opts.grids !== 'FlatColonial';
+                  updateGlobalOptions(flatOnly ? { thermaCoat, grids: 'FlatColonial' } : { thermaCoat });
+                }} options={THERMA_COAT_OPTS} />
               </div>
 
               {/* Frame color swatches */}
@@ -155,7 +192,7 @@ export default function ConfigScreen() {
                       color={FRAME_COLOR_HEX[c.value]}
                       label={c.label}
                       selected={opts.frameColor === c.value}
-                      onClick={() => updateGlobalOptions({ frameColor: c.value as FrameColor })}
+                      onClick={() => updateGlobalOptions(c.value === 'Designer Black' ? { frameColor: c.value as FrameColor, thermaCoat: 'None' } : { frameColor: c.value as FrameColor })}
                     />
                   ))}
                 </div>
@@ -163,7 +200,6 @@ export default function ConfigScreen() {
 
               <div className="grid sm:grid-cols-2 gap-4">
                 <Toggle label="Sound Package (SST)" checked={opts.soundPackage} onChange={(v) => updateGlobalOptions({ soundPackage: v })} />
-                <Toggle label="Argon Gas" checked={opts.argonGas} onChange={(v) => updateGlobalOptions({ argonGas: v })} />
               </div>
             </div>
           )}
@@ -295,7 +331,8 @@ export default function ConfigScreen() {
           )}
         </Card>
 
-        {/* Window list */}
+        {/* Window Schedule */}
+        {(windows.length > 0 || windowSills.quantity > 0) && (
         <Card>
           <div className="px-4 py-3 border-b">
             <h3 className="font-semibold text-hpr-dark">Window Schedule</h3>
@@ -305,7 +342,7 @@ export default function ConfigScreen() {
             {windows.map((w) => {
               const listPrice = calcWindowListPrice(w, opts);
               const breakdown = listPrice != null
-                ? calcWindowCostAndSell(listPrice, w.quantity, pricing.margin)
+                ? calcWindowCostAndSell(listPrice, w.quantity, pricing.margin, getWindowCostParams(w))
                 : null;
               return (
                 <WindowConfigRow
@@ -318,29 +355,6 @@ export default function ConfigScreen() {
                 />
               );
             })}
-            {doors.length > 0 && doors.map((d) => {
-              const listPrice = calcDoorListPrice(d, opts);
-              const breakdown = listPrice != null
-                ? calcWindowCostAndSell(listPrice, d.quantity, pricing.margin)
-                : null;
-              return (
-                <div key={d.id} className="flex items-center px-4 py-3 gap-3">
-                  <div className="text-2xl">🚪</div>
-                  <div className="flex-1">
-                    <div className="text-sm font-medium">{d.doorType} Door – {d.config}</div>
-                    <div className="text-xs text-gray-500">{d.side} · {d.width}×{d.height} · qty {d.quantity}</div>
-                  </div>
-                  <div className="text-right">
-                    {breakdown ? (
-                      <>
-                        <div className="font-semibold text-hpr-blue">{formatCurrency(breakdown.lineTotal)}</div>
-                        {internalView && <div className="text-xs text-gray-400">Cost: {formatCurrency(breakdown.lineCost)}</div>}
-                      </>
-                    ) : <span className="text-xs text-red-400">No price</span>}
-                  </div>
-                </div>
-              );
-            })}
             {windowSills.quantity > 0 && (
               <div className="flex items-center px-4 py-3 gap-3 bg-gray-50">
                 <div className="flex-1">
@@ -351,7 +365,152 @@ export default function ConfigScreen() {
               </div>
             )}
           </div>
-          {/* Total footer */}
+        </Card>
+        )}
+
+        {/* Door Schedule (Anlin + Love That Door) */}
+        {doors.length > 0 && (
+        <Card>
+          <div className="px-4 py-3 border-b">
+            <h3 className="font-semibold text-hpr-dark">Door Schedule</h3>
+            <p className="text-xs text-gray-400">Tap pencil to edit an Anlin door · Love That Door options are edited inline</p>
+          </div>
+          <div className="divide-y">
+            {anlinDoors.map((d) => {
+              const listPrice = calcDoorListPrice(d, opts);
+              const breakdown = listPrice != null
+                ? calcWindowCostAndSell(listPrice, d.quantity, pricing.margin, getDoorCostParams(d))
+                : null;
+              return (
+                <div key={d.id} className="flex items-center px-4 py-3 gap-3">
+                  <div className="text-2xl">🚪</div>
+                  <div className="flex-1">
+                    <div className="text-sm font-medium">{doorDisplayName(d)}</div>
+                    <div className="text-xs text-gray-500">{d.side} · {d.width}×{d.height} · qty {d.quantity}{(d.adders?.length ?? 0) > 0 && ` · +${d.adders!.length} adder${d.adders!.length > 1 ? 's' : ''}`}</div>
+                  </div>
+                  <div className="text-right mr-2">
+                    {breakdown ? (
+                      <>
+                        <div className="font-semibold text-hpr-blue">{formatCurrency(breakdown.lineTotal)}</div>
+                        {internalView && <div className="text-xs text-gray-400">Cost: {formatCurrency(breakdown.lineCost)}</div>}
+                      </>
+                    ) : <span className="text-xs text-red-400">No price</span>}
+                  </div>
+                  <button onClick={() => setOverrideDoorId(d.id)} className="p-2 text-gray-400 hover:text-hpr-blue shrink-0">
+                    <Pencil size={16} />
+                  </button>
+                </div>
+              );
+            })}
+              {ltdDoors.map((d, idx) => {
+                const listPrice = calcDoorListPrice(d, opts);
+                const breakdown = listPrice != null
+                  ? calcWindowCostAndSell(listPrice, d.quantity, pricing.margin, getDoorCostParams(d))
+                  : null;
+                const isIron = d.ltdLine !== 'PatioSlider';
+                const num = (v: string) => Math.max(0, parseFloat(v) || 0);
+                return (
+                  <div key={d.id} className="px-4 py-4 space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold">LTD{idx + 1} · {doorDisplayName(d)}</div>
+                        <div className="text-xs text-gray-500">
+                          {d.side} · {((d.width * d.height) / 144).toFixed(1)} sq ft
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        {breakdown ? (
+                          <>
+                            <div className="font-semibold text-hpr-blue">{formatCurrency(breakdown.lineTotal)}</div>
+                            {internalView && <div className="text-xs text-gray-400">Cost: {formatCurrency(breakdown.lineCost)}</div>}
+                          </>
+                        ) : <span className="text-xs text-red-400">No price</span>}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-sm font-medium text-gray-700">Width (in)</label>
+                        <input type="number" inputMode="decimal" value={d.width}
+                          onChange={(e) => updateDoor(d.id, { width: num(e.target.value) })}
+                          className="h-12 px-3 rounded-lg border border-gray-300 text-base focus:outline-none focus:ring-2 focus:ring-hpr-blue" />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-sm font-medium text-gray-700">Height (in)</label>
+                        <input type="number" inputMode="decimal" value={d.height}
+                          onChange={(e) => updateDoor(d.id, { height: num(e.target.value) })}
+                          className="h-12 px-3 rounded-lg border border-gray-300 text-base focus:outline-none focus:ring-2 focus:ring-hpr-blue" />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-sm font-medium text-gray-700">Qty</label>
+                        <input type="number" inputMode="numeric" min={1} value={d.quantity}
+                          onChange={(e) => updateDoor(d.id, { quantity: Math.max(1, Math.floor(num(e.target.value))) })}
+                          className="h-12 px-3 rounded-lg border border-gray-300 text-base focus:outline-none focus:ring-2 focus:ring-hpr-blue" />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <Select label="Door Type" value={d.ltdLine ?? 'IronEntry'}
+                        onChange={(e) => {
+                          const line = e.target.value as LoveThatDoorLine;
+                          updateDoor(d.id, line === 'PatioSlider'
+                            ? { ltdLine: line, doorType: 'Sliding', ltdSliderPanels: d.ltdSliderPanels ?? 2, ltdThermallyBroken: false, ltdPivotUpgrade: false }
+                            : { ltdLine: line, doorType: 'French', ltdSliderPanels: undefined });
+                        }}
+                        options={[
+                          { value: 'IronEntry', label: 'Front Iron Entry' },
+                          { value: 'PatioSlider', label: 'Back Patio Slider' },
+                        ]}
+                      />
+                      {!isIron && (
+                        <Select label="Slider Configuration" value={String(d.ltdSliderPanels ?? 2)}
+                          onChange={(e) => updateDoor(d.id, { ltdSliderPanels: parseInt(e.target.value) as 2 | 3 | 4 | 6 })}
+                          options={LTD_PANEL_OPTS}
+                        />
+                      )}
+                      <Select label="Color" value={d.ltdColor ?? 'Black'}
+                        onChange={(e) => updateDoor(d.id, { ltdColor: e.target.value })}
+                        options={LTD_COLOR_OPTS}
+                      />
+                      <Select label="Glass" value={d.ltdGlassOption ?? 'Clear'}
+                        onChange={(e) => updateDoor(d.id, { ltdGlassOption: e.target.value })}
+                        options={LTD_GLASS_OPTS}
+                      />
+                    </div>
+
+                    <div className="rounded-lg border border-gray-200 p-3 space-y-3 bg-gray-50">
+                      {isIron && (
+                        <>
+                          <Toggle label="Thermally Broken (+20% door)" checked={!!d.ltdThermallyBroken}
+                            onChange={(v) => updateDoor(d.id, { ltdThermallyBroken: v })} />
+                          <Toggle label="Pivot System Upgrade (+$1,000)" checked={!!d.ltdPivotUpgrade}
+                            onChange={(v) => updateDoor(d.id, { ltdPivotUpgrade: v })} />
+                        </>
+                      )}
+                      <Toggle label="Electric Glass Upgrade (+$25/sq ft)" checked={!!d.ltdElectricGlass}
+                        onChange={(v) => updateDoor(d.id, { ltdElectricGlass: v })} />
+                      <Toggle label={'Long Pulls 48/60/96" (+$200)'} checked={!!d.ltdLongPulls}
+                        onChange={(v) => updateDoor(d.id, { ltdLongPulls: v })} />
+                      <Select label="Biometric Lock" value={d.ltdBiometricLock ?? 'none'}
+                        onChange={(e) => updateDoor(d.id, { ltdBiometricLock: e.target.value as LoveThatDoorBiometric })}
+                        options={[
+                          { value: 'none', label: 'None' },
+                          { value: 'standard', label: 'Biometric (+$300)' },
+                          { value: 'wifi', label: 'Biometric + Wi-Fi (+$400)' },
+                        ]}
+                      />
+                    </div>
+
+                    <AdderEditor adders={d.adders} onChange={(adders) => updateDoor(d.id, { adders })} quantity={d.quantity} />
+                  </div>
+                );
+              })}
+          </div>
+        </Card>
+        )}
+
+        {/* Totals */}
+        <Card>
           <div className="border-t px-4 py-4 bg-gray-50 space-y-1">
             <div className="flex justify-between text-sm">
               <span className="text-gray-600">Subtotal</span>
@@ -376,6 +535,13 @@ export default function ConfigScreen() {
         <WindowOverridePanel
           window={overrideWindow}
           onClose={() => setOverrideWindowId(null)}
+        />
+      )}
+
+      {overrideDoor && (
+        <DoorOverridePanel
+          door={overrideDoor}
+          onClose={() => setOverrideDoorId(null)}
         />
       )}
 
@@ -418,6 +584,7 @@ function WindowConfigRow({
           {w.obscure !== 'None' && ` · ${w.obscure}`}
           {w.seriesOverride && ` · ${w.seriesOverride}*`}
           {w.note && ` · ${w.note}`}
+          {(w.adders?.length ?? 0) > 0 && ` · +${w.adders!.length} adder${w.adders!.length > 1 ? 's' : ''}`}
         </div>
       </div>
       <div className="text-right mr-2">

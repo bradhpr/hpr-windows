@@ -14,7 +14,7 @@ export type WindowStyle =
   | 'Geometric';
 
 export type FrameType = 'Block' | 'RetroFin' | 'BrickMould';
-export type FrameColor = 'White' | 'Adobe' | 'Tan';
+export type FrameColor = 'White' | 'Adobe' | 'Tan' | 'Designer Black';
 export type GlassPackage = 'Standard' | 'Infinit-e' | 'SunMatrix' | 'SunShield';
 export type GridStyle = 'None' | 'FlatColonial' | 'SculpturedColonial' | 'SculpturedInch';
 export type ObscureGlass =
@@ -52,6 +52,25 @@ export type ArchFinishColor = 'SatinBlack' | 'Bronze' | 'Brass' | 'Nickel';
 export type SlidingDoorConfig = 'XO' | 'OX' | 'XOO' | 'OOX' | 'OXO' | 'OXXO';
 export type FrenchDoorConfig = 'X' | 'XO' | 'OX' | 'XX' | 'OXO' | 'OXXO';
 export type DoorRailStyle = 'Standard' | 'French';
+// Sliding door handle: standard (white/tan/adobe) or an architectural finish on the interior only / both sides
+// Handle design (no price difference)
+export type HandleDesign = 'Traditional' | 'Contemporary';
+export type SlidingHandleStyle = 'Standard' | 'Interior' | 'InteriorExterior';
+
+// Door vendor / brand. Anlin is priced by United Inches; Love That Door by square foot.
+export type DoorBrand = 'Anlin' | 'LoveThatDoor';
+// Love That Door product lines
+export type LoveThatDoorLine = 'IronEntry' | 'PatioSlider';
+export type LoveThatDoorBiometric = 'none' | 'standard' | 'wifi';
+
+// Custom line-item adder for extra construction (e.g. increase opening, add header).
+// price is what the customer is charged per unit (not marked up); cost is HPR's internal cost per unit.
+export interface Adder {
+  id: string;
+  description: string;
+  price: number;
+  cost?: number;
+}
 
 export interface WindowEntry {
   id: string;
@@ -77,6 +96,7 @@ export interface WindowEntry {
   argonOverride?: boolean;
   customVentSize?: boolean;
   windowLimitingDevice?: boolean;
+  adders?: Adder[];
   extraNotes: string;
 }
 
@@ -94,7 +114,6 @@ export interface PatioDoortEntry {
   glassOverride?: GlassPackage;
   gridOverride?: GridStyle;
   frameColorOverride?: FrameColor;
-  argonOverride?: boolean;
   extraNotes: string;
   // French door specific
   overHeight?: boolean; // over 84"
@@ -102,6 +121,29 @@ export interface PatioDoortEntry {
   archFinish?: boolean;
   operableSideLites?: number;
   handleFinish?: ArchFinishColor | 'Standard';
+  // Anlin door edit panel
+  thermaCoatOverride?: ThermaCoatColor; // doors default to no ThermaCoat (not inherited from window globals)
+  adders?: Adder[];
+  handleDesign?: HandleDesign; // undefined = Traditional
+  slidingHandleStyle?: SlidingHandleStyle;
+  quadLock?: boolean;
+  keyedCylinder?: boolean;
+  extPullHandle?: boolean;
+  deadBolt?: boolean;
+  stainlessRollers?: boolean;
+  // ── Vendor / brand ──
+  // Undefined is treated as 'Anlin' for backward compatibility with saved projects.
+  brand?: DoorBrand;
+  // ── Love That Door specific (priced by square foot) ──
+  ltdLine?: LoveThatDoorLine;
+  ltdSliderPanels?: 2 | 3 | 4 | 6;
+  ltdColor?: string;
+  ltdGlassOption?: string;
+  ltdThermallyBroken?: boolean; // iron doors: +20% on the per-sq-ft door portion
+  ltdElectricGlass?: boolean;   // +$25 / sq ft
+  ltdPivotUpgrade?: boolean;    // iron doors: +$1,000
+  ltdLongPulls?: boolean;       // +$200
+  ltdBiometricLock?: LoveThatDoorBiometric; // standard +$300, wifi +$400
 }
 
 export interface GlobalOptions {
@@ -148,6 +190,11 @@ export interface PricingConfig {
   depositPercent: number;
   paymentMethod: 'Check' | 'ACH' | 'CreditCard';
   showCertificationsPage: boolean;
+  // Show per-line prices on the proposal. Undefined is treated as true for saved projects.
+  showWindowPrices?: boolean;
+  showDoorPrices?: boolean;
+  // Show the financing options block on the proposal. Undefined is treated as true.
+  showFinancing?: boolean;
 }
 
 export interface Project {

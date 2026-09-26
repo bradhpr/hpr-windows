@@ -1,6 +1,8 @@
 import { useProjectStore } from '../../store/projectStore';
 import { Modal, Select, Toggle } from '../shared/UI';
+import AdderEditor from '../shared/AdderEditor';
 import { WINDOW_STYLE_LABELS, WindowStyleSVG } from '../shared/WindowStyleSVG';
+import { thermaCoatActive } from '../../utils/calculations';
 import type { WindowEntry, WindowStyle, ObscureGlass, ScreenType, GridStyle, FrameType, FrameColor, GlassPackage, ThermaCoatColor, WindowSeries } from '../../types';
 
 const OBSCURE_OPTS: { value: ObscureGlass; label: string }[] = [
@@ -25,7 +27,9 @@ interface Props {
 }
 
 export default function WindowOverridePanel({ window: w, onClose }: Props) {
-  const { updateWindow } = useProjectStore();
+  const { updateWindow, currentProject } = useProjectStore();
+  const thermaActive = thermaCoatActive(w, currentProject.globalOptions);
+  const designerBlack = (w.frameColorOverride ?? currentProject.globalOptions.frameColor) === 'Designer Black';
 
   function upd(updates: Partial<WindowEntry>) {
     updateWindow(w.id, updates);
@@ -64,12 +68,13 @@ export default function WindowOverridePanel({ window: w, onClose }: Props) {
         <Select
           label="Frame Color Override"
           value={w.frameColorOverride ?? ''}
-          onChange={(e) => upd({ frameColorOverride: e.target.value ? e.target.value as FrameColor : undefined })}
+          onChange={(e) => upd(e.target.value === 'Designer Black' ? { frameColorOverride: 'Designer Black', thermaCoatOverride: 'None' } : { frameColorOverride: e.target.value ? e.target.value as FrameColor : undefined })}
           options={[
             { value: '', label: '(Use global default)' },
             { value: 'White', label: 'White' },
-            { value: 'Adobe', label: 'Adobe (+4%)' },
-            { value: 'Tan', label: 'Tan (+4%)' },
+            { value: 'Adobe', label: 'Adobe' },
+            { value: 'Tan', label: 'Tan' },
+            { value: 'Designer Black', label: 'Designer Black (no ThermaCoat)' },
           ]}
         />
 
@@ -87,15 +92,17 @@ export default function WindowOverridePanel({ window: w, onClose }: Props) {
         />
 
         <Select
-          label="Grid Override"
+          label={thermaActive ? 'Grid Override (Flat Colonial only with ThermaCoat)' : 'Grid Override'}
           value={w.gridOverride ?? ''}
           onChange={(e) => upd({ gridOverride: e.target.value ? e.target.value as GridStyle : undefined })}
           options={[
             { value: '', label: '(Use global default)' },
             { value: 'None', label: 'No Grids' },
             { value: 'FlatColonial', label: '5/8" Flat Colonial' },
-            { value: 'SculpturedColonial', label: '5/8" Sculptured' },
-            { value: 'SculpturedInch', label: '1" Sculptured' },
+            ...(thermaActive ? [] : [
+              { value: 'SculpturedColonial', label: '5/8" Sculptured' },
+              { value: 'SculpturedInch', label: '1" Sculptured' },
+            ]),
           ]}
         />
 
@@ -131,9 +138,15 @@ export default function WindowOverridePanel({ window: w, onClose }: Props) {
         />
 
         <Select
-          label="ThermaCoat Override"
+          label={designerBlack ? 'ThermaCoat Override (not available with Designer Black)' : 'ThermaCoat Override'}
+          disabled={designerBlack}
           value={w.thermaCoatOverride ?? ''}
-          onChange={(e) => upd({ thermaCoatOverride: e.target.value ? e.target.value as ThermaCoatColor : undefined })}
+          onChange={(e) => {
+            const thermaCoatOverride = e.target.value ? e.target.value as ThermaCoatColor : undefined;
+            const grid = w.gridOverride;
+            const flatOnly = thermaCoatOverride && thermaCoatOverride !== 'None' && (grid === 'SculpturedColonial' || grid === 'SculpturedInch');
+            upd(flatOnly ? { thermaCoatOverride, gridOverride: 'FlatColonial' } : { thermaCoatOverride });
+          }}
           options={[
             { value: '', label: '(Use global default)' },
             { value: 'None', label: 'Not Included' },
@@ -164,11 +177,6 @@ export default function WindowOverridePanel({ window: w, onClose }: Props) {
             onChange={(v) => upd({ soundPackageOverride: v })}
           />
           <Toggle
-            label="Argon Gas"
-            checked={w.argonOverride ?? false}
-            onChange={(v) => upd({ argonOverride: v })}
-          />
-          <Toggle
             label="True Action Lock"
             checked={w.hardwareLockOverride === 'TrueAction'}
             onChange={(v) => upd({ hardwareLockOverride: v ? 'TrueAction' : undefined })}
@@ -183,6 +191,10 @@ export default function WindowOverridePanel({ window: w, onClose }: Props) {
             checked={w.windowLimitingDevice ?? false}
             onChange={(v) => upd({ windowLimitingDevice: v })}
           />
+        </div>
+
+        <div className="border-t pt-4">
+          <AdderEditor adders={w.adders} onChange={(adders) => upd({ adders })} quantity={w.quantity} />
         </div>
 
         <div>
