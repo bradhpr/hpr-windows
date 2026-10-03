@@ -20,7 +20,7 @@ import {
   type DoorGlazingAdders,
   FLAT_OPTIONS, COLOR_UPCHARGE, THERMA_COAT_UPCHARGE, DESIGNER_BLACK, DESIGNER_BLACK_UPCHARGE,
   HPR_COST_MULTIPLIER, LABOR_COST_PER_WINDOW,
-  LOVE_THAT_DOOR_PRICING, ANLIN_DOOR_INSTALL_COST, LOVE_THAT_DOOR_INSTALL_COST, FINANCING,
+  LOVE_THAT_DOOR_PRICING, ANLIN_DOOR_INSTALL, LOVE_THAT_DOOR_INSTALL, FINANCING, PET_DOOR_OPTIONS,
 } from '../data/pricing';
 
 function findBracketIndex(ui: number, brackets: readonly { min: number; max: number }[]): number | null {
@@ -268,11 +268,26 @@ export function getWindowCostParams(w: WindowEntry): { adderPerUnit: number; add
   return { adderPerUnit: adderPerUnit(w), adderCostPerUnit: adderCostPerUnit(w) };
 }
 
+// Install labor per Love That Door unit, tiered by door size: <30 sq ft, 30–60 sq ft, >60 sq ft.
+export function loveThatDoorInstallCost(door: PatioDoortEntry): number {
+  const sqFt = (door.width * door.height) / 144;
+  const L = LOVE_THAT_DOOR_INSTALL;
+  if (sqFt < L.smallMaxSqFt) return L.small;
+  if (sqFt <= L.mediumMaxSqFt) return L.medium;
+  return L.large;
+}
+
+// Install labor per Anlin door unit, tiered by United Inches: up to 200 UI, over 200 UI.
+export function anlinDoorInstallCost(door: PatioDoortEntry): number {
+  const ui = door.width + door.height;
+  return ui <= ANLIN_DOOR_INSTALL.standardMaxUi ? ANLIN_DOOR_INSTALL.standard : ANLIN_DOOR_INSTALL.large;
+}
+
 export function getDoorCostParams(door: PatioDoortEntry): { laborPerUnit: number; listIsCost: boolean; adderPerUnit: number; adderCostPerUnit: number } {
   if ((door.brand ?? 'Anlin') === 'LoveThatDoor') {
-    return { laborPerUnit: LOVE_THAT_DOOR_INSTALL_COST, listIsCost: true, adderPerUnit: adderPerUnit(door), adderCostPerUnit: adderCostPerUnit(door) };
+    return { laborPerUnit: loveThatDoorInstallCost(door), listIsCost: true, adderPerUnit: adderPerUnit(door), adderCostPerUnit: adderCostPerUnit(door) };
   }
-  return { laborPerUnit: ANLIN_DOOR_INSTALL_COST, listIsCost: false, adderPerUnit: adderPerUnit(door), adderCostPerUnit: adderCostPerUnit(door) };
+  return { laborPerUnit: anlinDoorInstallCost(door), listIsCost: false, adderPerUnit: adderPerUnit(door), adderCostPerUnit: adderCostPerUnit(door) };
 }
 
 // Display label for a door line item, shared by the schedule, proposal and PDF.
@@ -385,7 +400,13 @@ export function calcDoorListPrice(door: PatioDoortEntry, globals: GlobalOptions)
   }
 
   const thermaCoat = doorThermaCoatActive(door, globals) ? door.thermaCoatOverride! : 'None';
-  return Math.round(base * windowColorMultiplier(color, thermaCoat) * 100) / 100;
+  // Pet door is a flat list add-on, outside the color multiplier (see PET_DOOR_OPTIONS).
+  return Math.round((base * windowColorMultiplier(color, thermaCoat) + petDoorListPrice(door)) * 100) / 100;
+}
+
+export function petDoorListPrice(door: PatioDoortEntry): number {
+  const size = door.petDoor ?? 'None';
+  return size === 'None' ? 0 : PET_DOOR_OPTIONS[size].price;
 }
 
 export function calcAllBreakdowns(
@@ -479,6 +500,30 @@ export function calcProjectTotals(
     windowSillTotal,
     depositAmount,
   };
+}
+
+// Entries missing the flag (older saved projects) count as included.
+export function isIncludedInQuote(item: { includedInQuote?: boolean }): boolean {
+  return item.includedInQuote !== false;
+}
+
+// Single entry point for quote totals: filters to included entries once, then prices them.
+// calcAllBreakdowns / calcProjectTotals sum whatever they're given, so nothing is filtered or counted twice.
+export function calcQuoteTotals(
+  windows: WindowEntry[],
+  doors: PatioDoortEntry[],
+  globals: GlobalOptions,
+  pricing: PricingConfig,
+  sills: { quantity: number; unitPrice: number },
+): { includedWindows: WindowEntry[]; includedDoors: PatioDoortEntry[]; breakdowns: PriceBreakdown[]; totals: ProjectTotals } {
+  const includedWindows = windows.filter(isIncludedInQuote);
+  const includedDoors = doors.filter(isIncludedInQuote);
+  const breakdowns = calcAllBreakdowns(includedWindows, includedDoors, globals, pricing.margin);
+  const totals = calcProjectTotals(
+    breakdowns, sills.quantity, sills.unitPrice, pricing,
+    includedWindows.length + includedDoors.length,
+  );
+  return { includedWindows, includedDoors, breakdowns, totals };
 }
 
 // Low monthly payment option: the project total up to the financing cap is amortized at the

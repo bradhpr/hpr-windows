@@ -252,6 +252,17 @@ export const FLAT_OPTIONS = {
   FrenchArchFinishXX: 330,
   FrenchOperableSideLite: 650,
 } as const;
+// ─── ANLIN IN-GLASS PET DOOR (Malibu sliding & French doors, dual flap) ──────
+// Price book p.77: list price added on top of the door base. The pet door frame matches the
+// vinyl / ThermaCoat color at no stated extra charge, so it is not run through the color multiplier.
+// Sliding doors with a pet door require a dead bolt.
+export const PET_DOOR_OPTIONS = {
+  Small:  { name: 'Small',   detail: '1–15 lbs, flap 4¼" × 8¼"',     price: 1200 },
+  Medium: { name: 'Medium',  detail: '1–40 lbs, flap 7¼" × 12¼"',    price: 1200 },
+  Large:  { name: 'Large',   detail: '1–100 lbs, flap 9¼" × 16¼"',   price: 1200 },
+  XLarge: { name: 'X-Large', detail: '12–220 lbs, flap 12¾" × 23¾"', price: 1395 },
+} as const;
+
 // ─── COLOR PRICING MULTIPLIER ─────────────────────────────────────────────────
 // White, Adobe and Tan are priced identically so all three cost the homeowner the same.
 export const COLOR_UPCHARGE: Record<string, number> = {
@@ -311,8 +322,20 @@ export const FINANCING = {
 export const HPR_COST_MULTIPLIER = 0.48;
 export const LABOR_COST_PER_WINDOW = 125;
 // Install labor is charged per door unit and varies by vendor.
-export const ANLIN_DOOR_INSTALL_COST = 500;
-export const LOVE_THAT_DOOR_INSTALL_COST = 3000;
+// Anlin door install labor is tiered by United Inches (width + height).
+export const ANLIN_DOOR_INSTALL = {
+  standardMaxUi: 200, // up to and including 200 UI
+  standard: 500,
+  large: 1000,        // over 200 UI
+} as const;
+// Love That Door install labor is tiered by door size (sq ft).
+export const LOVE_THAT_DOOR_INSTALL = {
+  smallMaxSqFt: 30,  // under 30 sq ft
+  mediumMaxSqFt: 60, // 30–60 sq ft (inclusive); over 60 is large
+  small: 700,
+  medium: 1500,
+  large: 3000,
+} as const;
 export const DEFAULT_MARGIN = 0.50;
 export const DEFAULT_SILL_PRICE = 75;
 

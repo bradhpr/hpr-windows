@@ -154,7 +154,7 @@ export const useProjectStore = create<AppState>()(
         set((s) => ({
           currentProject: {
             ...s.currentProject,
-            windows: [...s.currentProject.windows, { ...win, id: crypto.randomUUID() }],
+            windows: [...s.currentProject.windows, { ...win, includedInQuote: win.includedInQuote ?? true, id: crypto.randomUUID() }],
           },
         })),
 
@@ -180,7 +180,7 @@ export const useProjectStore = create<AppState>()(
         set((s) => {
           const idx = s.currentProject.windows.findIndex((w) => w.id === id);
           if (idx < 0) return s;
-          const copy = { ...s.currentProject.windows[idx], id: crypto.randomUUID() };
+          const copy = { ...s.currentProject.windows[idx], includedInQuote: true, id: crypto.randomUUID() };
           const wins = [...s.currentProject.windows];
           wins.splice(idx + 1, 0, copy);
           return { currentProject: { ...s.currentProject, windows: wins } };
@@ -197,7 +197,7 @@ export const useProjectStore = create<AppState>()(
         set((s) => ({
           currentProject: {
             ...s.currentProject,
-            doors: [...s.currentProject.doors, { ...door, id: crypto.randomUUID() }],
+            doors: [...s.currentProject.doors, { ...door, includedInQuote: door.includedInQuote ?? true, id: crypto.randomUUID() }],
           },
         })),
 

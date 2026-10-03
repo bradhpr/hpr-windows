@@ -56,6 +56,8 @@ export type DoorRailStyle = 'Standard' | 'French';
 // Handle design (no price difference)
 export type HandleDesign = 'Traditional' | 'Contemporary';
 export type SlidingHandleStyle = 'Standard' | 'Interior' | 'InteriorExterior';
+// Anlin in-glass pet (doggie) door, dual flap
+export type PetDoorSize = 'None' | 'Small' | 'Medium' | 'Large' | 'XLarge';
 
 // Door vendor / brand. Anlin is priced by United Inches; Love That Door by square foot.
 export type DoorBrand = 'Anlin' | 'LoveThatDoor';
@@ -98,6 +100,8 @@ export interface WindowEntry {
   windowLimitingDevice?: boolean;
   adders?: Adder[];
   extraNotes: string;
+  // Whether this line is priced into the quote. Undefined is treated as true for saved projects.
+  includedInQuote?: boolean;
 }
 
 export interface PatioDoortEntry {
@@ -115,6 +119,8 @@ export interface PatioDoortEntry {
   gridOverride?: GridStyle;
   frameColorOverride?: FrameColor;
   extraNotes: string;
+  // Whether this line is priced into the quote. Undefined is treated as true for saved projects.
+  includedInQuote?: boolean;
   // French door specific
   overHeight?: boolean; // over 84"
   panelCount?: 1 | 2;
@@ -131,6 +137,7 @@ export interface PatioDoortEntry {
   extPullHandle?: boolean;
   deadBolt?: boolean;
   stainlessRollers?: boolean;
+  petDoor?: PetDoorSize; // undefined = None
   // ── Vendor / brand ──
   // Undefined is treated as 'Anlin' for backward compatibility with saved projects.
   brand?: DoorBrand;

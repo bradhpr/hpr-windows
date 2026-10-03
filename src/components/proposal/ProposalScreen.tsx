@@ -2,9 +2,9 @@ import { useRef, useState } from 'react';
 import { Printer, Download, Save, ChevronLeft, Edit3 } from 'lucide-react';
 import { useProjectStore } from '../../store/projectStore';
 import { Btn, Input, Select, Toggle } from '../shared/UI';
-import { calcAllBreakdowns, calcProjectTotals, formatCurrency, formatCurrencyDecimal, calcFinancing, doorDisplayName, effectiveGridStyle, doorEffectiveGridStyle, doorThermaCoatActive } from '../../utils/calculations';
+import { calcQuoteTotals, formatCurrency, formatCurrencyDecimal, calcFinancing, doorDisplayName, effectiveGridStyle, doorEffectiveGridStyle, doorThermaCoatActive } from '../../utils/calculations';
 import { WindowStyleSVG, WINDOW_STYLE_LABELS } from '../shared/WindowStyleSVG';
-import { FINANCING } from '../../data/pricing';
+import { FINANCING, PET_DOOR_OPTIONS } from '../../data/pricing';
 import { PRECAUTIONARY_LETTER, TERMS_AND_CONDITIONS } from '../../data/contractDocs';
 import { LTD_SLIDER_JOB_DESCRIPTION, ANLIN_SCOPE_OF_WORK, ARCH_FINISH_LABELS } from '../../data/pricing';
 import { downloadProposalPdf } from '../../utils/domPdf';
@@ -50,13 +50,14 @@ export default function ProposalScreen() {
     updatePricing, setAdditionalDetails, saveProject, setPhase,
   } = useProjectStore();
 
-  const { homeowner, salesRep, windows, doors, globalOptions, windowSills, pricing, additionalDetails } = currentProject;
+  const { homeowner, salesRep, globalOptions, windowSills, pricing, additionalDetails } = currentProject;
   const [generating, setGenerating] = useState(false);
   const [editingHomeowner, setEditingHomeowner] = useState(!homeowner.name);
   const proposalRef = useRef<HTMLDivElement>(null);
 
-  const breakdowns = calcAllBreakdowns(windows, doors, globalOptions, pricing.margin);
-  const totals = calcProjectTotals(breakdowns, windowSills.quantity, windowSills.unitPrice, pricing, windows.length + doors.length);
+  // Excluded entries are omitted from the proposal (and PDF) entirely: everything below uses the included lists.
+  const { includedWindows: windows, includedDoors: doors, breakdowns, totals } =
+    calcQuoteTotals(currentProject.windows, currentProject.doors, globalOptions, pricing, windowSills);
 
   const anlinDoors = doors.filter((d) => d.brand !== 'LoveThatDoor');
   const ltdDoors = doors.filter((d) => d.brand === 'LoveThatDoor');
@@ -180,8 +181,13 @@ export default function ProposalScreen() {
       ════════════════════════════════════════════════════════ */}
       <div ref={proposalRef} id="proposal-document" className="max-w-4xl mx-auto px-4 pt-6 pb-12 space-y-0 print:px-0 print:pt-0">
 
-        {/* ── PAGE 1: COVER ── */}
-        <div data-pdf-block className="bg-white shadow-md rounded-xl print:rounded-none print:shadow-none mb-6 overflow-hidden">
+        {/* ── PAGE 1: QUOTE COVER ── */}
+        <div data-pdf-block className="mb-6 overflow-hidden rounded-xl shadow-md print:rounded-none print:shadow-none">
+          <img src="/quote-cover.jpg" alt="Windows &amp; Doors — Your Personalized Quote" className="w-full h-auto block" />
+        </div>
+
+        {/* ── PAGE 2: HPR COVER ── */}
+        <div data-pdf-block data-pdf-break-before style={{ breakBefore: 'page' }} className="bg-white shadow-md rounded-xl print:rounded-none print:shadow-none mb-6 overflow-hidden">
           {/* Blue header band */}
           <div className="bg-hpr-blue px-8 py-8 text-white">
             <div className="flex items-start justify-between">
@@ -287,7 +293,10 @@ export default function ProposalScreen() {
               const grids = effectiveGridStyle(w, globalOptions);
               const isDesignerBlack = effectiveOpt(w.frameColorOverride, globalOptions.frameColor) === 'Designer Black';
               const therma = isDesignerBlack ? 'None' : effectiveOpt(w.thermaCoatOverride, globalOptions.thermaCoat);
-              const screen = effectiveOpt(w.screenOverride, globalOptions.screenType);
+              // Picture windows and geometrics don't open, so they never get a screen.
+              const screen = w.style === 'PW' || w.style === 'Geometric'
+                ? 'Not Included'
+                : effectiveOpt(w.screenOverride, globalOptions.screenType);
               const glass = effectiveOpt(w.glassOverride, globalOptions.glassPackage);
               return (
                 <div data-pdf-block key={w.id} className="px-6 py-4 flex gap-4">
@@ -405,6 +414,7 @@ export default function ProposalScreen() {
                       {d.keyedCylinder && !d.quadLock && <span>Keyed Lock: <strong>{d.extPullHandle ? 'With exterior pull' : 'Included'}</strong></span>}
                       {d.deadBolt && <span>Dead Bolt: <strong>Included</strong></span>}
                       {d.stainlessRollers && <span>Stainless Rollers: <strong>Included</strong></span>}
+                      {d.petDoor && d.petDoor !== 'None' && <span>Doggie Door: <strong>{PET_DOOR_OPTIONS[d.petDoor].name}</strong></span>}
                       {renderAdders(d.adders)}
                       {d.extraNotes && <span className="col-span-full text-gray-400 italic">Note: {d.extraNotes}</span>}
                     </div>

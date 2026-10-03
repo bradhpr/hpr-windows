@@ -2,7 +2,7 @@ import { FolderOpen, Plus, Trash2, ChevronRight, Save } from 'lucide-react';
 import { useProjectStore } from '../../store/projectStore';
 import { Btn, Card } from '../shared/UI';
 import { formatCurrency } from '../../utils/calculations';
-import { calcAllBreakdowns, calcProjectTotals } from '../../utils/calculations';
+import { calcQuoteTotals } from '../../utils/calculations';
 
 export default function ProjectsScreen() {
   const { savedProjects, currentProject, newProject, loadProject, deleteProject, saveProject, setPhase } = useProjectStore();
@@ -12,9 +12,7 @@ export default function ProjectsScreen() {
   }
 
   function getProjectTotal(p: typeof currentProject) {
-    const bd = calcAllBreakdowns(p.windows, p.doors, p.globalOptions, p.pricing.margin);
-    const t = calcProjectTotals(bd, p.windowSills.quantity, p.windowSills.unitPrice, p.pricing, p.windows.length + p.doors.length);
-    return t.totalContractAmount;
+    return calcQuoteTotals(p.windows, p.doors, p.globalOptions, p.pricing, p.windowSills).totals.totalContractAmount;
   }
 
   return (

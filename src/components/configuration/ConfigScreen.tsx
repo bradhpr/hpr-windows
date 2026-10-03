@@ -3,8 +3,8 @@ import { Settings2, ChevronDown, ChevronUp, Eye, EyeOff, Pencil } from 'lucide-r
 import { useProjectStore } from '../../store/projectStore';
 import { Select, Toggle, Btn, Card, SectionHeader, ColorSwatch, StatBadge } from '../shared/UI';
 import { WindowStyleSVG, WINDOW_STYLE_LABELS } from '../shared/WindowStyleSVG';
-import { calcWindowListPrice, calcWindowCostAndSell, calcDoorListPrice, calcProjectTotals, calcAllBreakdowns, formatCurrency, getDoorCostParams, getWindowCostParams, doorDisplayName } from '../../utils/calculations';
-import { LOVE_THAT_DOOR_COLORS, LOVE_THAT_DOOR_GLASS_OPTIONS, ARCH_FINISH_LABELS } from '../../data/pricing';
+import { calcWindowListPrice, calcWindowCostAndSell, calcDoorListPrice, calcQuoteTotals, isIncludedInQuote, formatCurrency, getDoorCostParams, getWindowCostParams, doorDisplayName } from '../../utils/calculations';
+import { LOVE_THAT_DOOR_COLORS, LOVE_THAT_DOOR_GLASS_OPTIONS, ARCH_FINISH_LABELS, PET_DOOR_OPTIONS } from '../../data/pricing';
 import type { LoveThatDoorLine, LoveThatDoorBiometric, ArchFinishColor } from '../../types';
 import type { GlobalOptions, WindowEntry, ObscureGlass, ScreenType, GridStyle, WindowStyle, FrameType, FrameColor, GlassPackage, ThermaCoatColor } from '../../types';
 import WindowOverridePanel from './WindowOverridePanel';
@@ -86,7 +86,7 @@ const FRAME_COLOR_HEX: Record<string, string> = {
 export default function ConfigScreen() {
   const {
     currentProject, updateGlobalOptions, updatePricing,
-    updateWindowSills, setPhase, internalView, toggleInternalView, updateDoor,
+    updateWindowSills, setPhase, internalView, toggleInternalView, updateDoor, updateWindow,
   } = useProjectStore();
 
   const { globalOptions: opts, windows, doors, pricing, windowSills } = currentProject;
@@ -95,9 +95,10 @@ export default function ConfigScreen() {
   const [overrideDoorId, setOverrideDoorId] = useState<string | null>(null);
   const [showPricing, setShowPricing] = useState(true);
 
-  // Compute totals
-  const breakdowns = calcAllBreakdowns(windows, doors, opts, pricing.margin);
-  const totals = calcProjectTotals(breakdowns, windowSills.quantity, windowSills.unitPrice, pricing, windows.length + doors.length);
+  // Compute totals (included entries only)
+  const { includedWindows, includedDoors, totals } = calcQuoteTotals(windows, doors, opts, pricing, windowSills);
+  const itemCount = windows.length + doors.length;
+  const includedCount = includedWindows.length + includedDoors.length;
 
   const globalThermaActive = opts.thermaCoat !== 'None' && opts.frameColor !== 'Designer Black';
   const anlinDoors = doors.filter((d) => d.brand !== 'LoveThatDoor');
@@ -125,7 +126,9 @@ export default function ConfigScreen() {
             </button>
             <div className="text-right">
               <div className="text-lg font-bold">{formatCurrency(totals.totalContractAmount)}</div>
-              <div className="text-xs text-blue-200">{windows.length + doors.length} items</div>
+              <div className="text-xs text-blue-200">
+                {includedCount === itemCount ? `${itemCount} items` : `${includedCount} of ${itemCount} included`}
+              </div>
             </div>
           </div>
         </div>
@@ -335,8 +338,11 @@ export default function ConfigScreen() {
         {(windows.length > 0 || windowSills.quantity > 0) && (
         <Card>
           <div className="px-4 py-3 border-b">
-            <h3 className="font-semibold text-hpr-dark">Window Schedule</h3>
-            <p className="text-xs text-gray-400">Tap pencil to set per-window overrides</p>
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="font-semibold text-hpr-dark">Window Schedule</h3>
+              <IncludedCount included={includedWindows.length} total={windows.length} />
+            </div>
+            <p className="text-xs text-gray-400">Tap pencil to set per-window overrides · switch off to leave a line out of the quote</p>
           </div>
           <div className="divide-y">
             {windows.map((w) => {
@@ -352,6 +358,7 @@ export default function ConfigScreen() {
                   breakdown={breakdown}
                   internalView={internalView}
                   onEdit={() => setOverrideWindowId(w.id)}
+                  onToggleIncluded={(v) => updateWindow(w.id, { includedInQuote: v })}
                 />
               );
             })}
@@ -372,7 +379,10 @@ export default function ConfigScreen() {
         {doors.length > 0 && (
         <Card>
           <div className="px-4 py-3 border-b">
-            <h3 className="font-semibold text-hpr-dark">Door Schedule</h3>
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="font-semibold text-hpr-dark">Door Schedule</h3>
+              <IncludedCount included={includedDoors.length} total={doors.length} />
+            </div>
             <p className="text-xs text-gray-400">Tap pencil to edit an Anlin door · Love That Door options are edited inline</p>
           </div>
           <div className="divide-y">
@@ -381,14 +391,16 @@ export default function ConfigScreen() {
               const breakdown = listPrice != null
                 ? calcWindowCostAndSell(listPrice, d.quantity, pricing.margin, getDoorCostParams(d))
                 : null;
+              const included = isIncludedInQuote(d);
               return (
-                <div key={d.id} className="flex items-center px-4 py-3 gap-3">
-                  <div className="text-2xl">🚪</div>
-                  <div className="flex-1">
-                    <div className="text-sm font-medium">{doorDisplayName(d)}</div>
-                    <div className="text-xs text-gray-500">{d.side} · {d.width}×{d.height} · qty {d.quantity}{(d.adders?.length ?? 0) > 0 && ` · +${d.adders!.length} adder${d.adders!.length > 1 ? 's' : ''}`}</div>
+                <div key={d.id} className={`flex items-center px-4 py-3 gap-3 ${included ? '' : 'bg-gray-50'}`}>
+                  <IncludeSwitch included={included} onChange={(v) => updateDoor(d.id, { includedInQuote: v })} />
+                  <div className={`text-2xl ${included ? '' : 'opacity-40'}`}>🚪</div>
+                  <div className={`flex-1 ${included ? '' : 'opacity-50'}`}>
+                    <div className="text-sm font-medium">{doorDisplayName(d)}{!included && <ExcludedTag />}</div>
+                    <div className="text-xs text-gray-500">{d.side} · {d.width}×{d.height} · qty {d.quantity}{d.petDoor && d.petDoor !== 'None' && ` · Doggie door (${PET_DOOR_OPTIONS[d.petDoor].name})`}{(d.adders?.length ?? 0) > 0 && ` · +${d.adders!.length} adder${d.adders!.length > 1 ? 's' : ''}`}</div>
                   </div>
-                  <div className="text-right mr-2">
+                  <div className={`text-right mr-2 ${included ? '' : 'opacity-50 line-through'}`}>
                     {breakdown ? (
                       <>
                         <div className="font-semibold text-hpr-blue">{formatCurrency(breakdown.lineTotal)}</div>
@@ -409,16 +421,18 @@ export default function ConfigScreen() {
                   : null;
                 const isIron = d.ltdLine !== 'PatioSlider';
                 const num = (v: string) => Math.max(0, parseFloat(v) || 0);
+                const included = isIncludedInQuote(d);
                 return (
-                  <div key={d.id} className="px-4 py-4 space-y-3">
+                  <div key={d.id} className={`px-4 py-4 space-y-3 ${included ? '' : 'bg-gray-50'}`}>
                     <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="text-sm font-semibold">LTD{idx + 1} · {doorDisplayName(d)}</div>
+                      <IncludeSwitch included={included} onChange={(v) => updateDoor(d.id, { includedInQuote: v })} />
+                      <div className={`flex-1 ${included ? '' : 'opacity-50'}`}>
+                        <div className="text-sm font-semibold">LTD{idx + 1} · {doorDisplayName(d)}{!included && <ExcludedTag />}</div>
                         <div className="text-xs text-gray-500">
                           {d.side} · {((d.width * d.height) / 144).toFixed(1)} sq ft
                         </div>
                       </div>
-                      <div className="text-right">
+                      <div className={`text-right ${included ? '' : 'opacity-50 line-through'}`}>
                         {breakdown ? (
                           <>
                             <div className="font-semibold text-hpr-blue">{formatCurrency(breakdown.lineTotal)}</div>
@@ -564,19 +578,24 @@ function WindowConfigRow({
   breakdown,
   internalView,
   onEdit,
+  onToggleIncluded,
 }: {
   window: WindowEntry;
   listPrice: number | null;
   breakdown: ReturnType<typeof calcWindowCostAndSell> | null;
   internalView: boolean;
   onEdit: () => void;
+  onToggleIncluded: (included: boolean) => void;
 }) {
+  const included = isIncludedInQuote(w);
   return (
-    <div className="flex items-center px-4 py-3 gap-3 hover:bg-gray-50">
-      <WindowStyleSVG style={w.style} size={40} className="shrink-0" />
-      <div className="flex-1 min-w-0">
+    <div className={`flex items-center px-4 py-3 gap-3 ${included ? 'hover:bg-gray-50' : 'bg-gray-50'}`}>
+      <IncludeSwitch included={included} onChange={onToggleIncluded} />
+      <WindowStyleSVG style={w.style} size={40} className={`shrink-0 ${included ? '' : 'opacity-40'}`} />
+      <div className={`flex-1 min-w-0 ${included ? '' : 'opacity-50'}`}>
         <div className="text-sm font-medium text-gray-800 truncate">
           {WINDOW_STYLE_LABELS[w.style]} — {w.width}×{w.height}
+          {!included && <ExcludedTag />}
         </div>
         <div className="text-xs text-gray-500">
           {w.side} · qty {w.quantity}
@@ -587,7 +606,7 @@ function WindowConfigRow({
           {(w.adders?.length ?? 0) > 0 && ` · +${w.adders!.length} adder${w.adders!.length > 1 ? 's' : ''}`}
         </div>
       </div>
-      <div className="text-right mr-2">
+      <div className={`text-right mr-2 ${included ? '' : 'opacity-50 line-through'}`}>
         {breakdown ? (
           <>
             <div className="font-semibold text-hpr-blue">{formatCurrency(breakdown.lineTotal)}</div>
@@ -603,5 +622,40 @@ function WindowConfigRow({
         <Pencil size={16} />
       </button>
     </div>
+  );
+}
+
+// Include/exclude switch for a schedule line. Excluded lines stay editable but are left out of totals and the proposal.
+function IncludeSwitch({ included, onChange }: { included: boolean; onChange: (included: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={included}
+      aria-label={included ? 'Included in quote' : 'Excluded from quote'}
+      title={included ? 'Included in quote — tap to exclude' : 'Excluded from quote — tap to include'}
+      onClick={() => onChange(!included)}
+      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${included ? 'bg-hpr-blue' : 'bg-gray-300'}`}
+    >
+      <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${included ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
+    </button>
+  );
+}
+
+function ExcludedTag() {
+  return (
+    <span className="ml-2 align-middle text-[10px] font-semibold uppercase tracking-wide text-gray-500 bg-gray-200 rounded px-1.5 py-0.5">
+      Excluded
+    </span>
+  );
+}
+
+function IncludedCount({ included, total }: { included: number; total: number }) {
+  if (total === 0) return null;
+  const partial = included < total;
+  return (
+    <span className={`text-xs font-medium rounded-full px-2 py-0.5 whitespace-nowrap ${partial ? 'bg-amber-100 text-amber-800' : 'text-gray-400'}`}>
+      {included} of {total} included
+    </span>
   );
 }

@@ -2,11 +2,16 @@ import { useProjectStore } from '../../store/projectStore';
 import { Modal, Select, Toggle } from '../shared/UI';
 import AdderEditor from '../shared/AdderEditor';
 import { doorDisplayName, doorThermaCoatActive } from '../../utils/calculations';
-import { ARCH_FINISH_LABELS, FLAT_OPTIONS } from '../../data/pricing';
+import { ARCH_FINISH_LABELS, FLAT_OPTIONS, PET_DOOR_OPTIONS } from '../../data/pricing';
 import type {
   PatioDoortEntry, FrameColor, GlassPackage, GridStyle, ThermaCoatColor,
-  ArchFinishColor, SlidingHandleStyle, HandleDesign,
+  ArchFinishColor, SlidingHandleStyle, HandleDesign, PetDoorSize,
 } from '../../types';
+
+const PET_DOOR_SELECT_OPTS = [
+  { value: 'None', label: 'None' },
+  ...Object.entries(PET_DOOR_OPTIONS).map(([value, o]) => ({ value, label: `${o.name} — ${o.detail} (+$${o.price.toLocaleString()})` })),
+];
 
 const THERMA_COAT_OPTS: { value: ThermaCoatColor; label: string }[] = [
   { value: 'None', label: 'Not Included' },
@@ -41,6 +46,7 @@ export default function DoorOverridePanel({ door: d, onClose }: Props) {
   const isSliding = d.doorType === 'Sliding';
   const hasFinishedHandle = isSliding ? (d.slidingHandleStyle ?? 'Standard') !== 'Standard' : !!d.archFinish;
   const frenchNeedsArchFinish = !isSliding && (frameColor === 'Tan' || frameColor === 'Adobe') && !d.archFinish;
+  const hasPetDoor = (d.petDoor ?? 'None') !== 'None';
 
   function upd(updates: Partial<PatioDoortEntry>) {
     updateDoor(d.id, updates);
@@ -183,12 +189,35 @@ export default function DoorOverridePanel({ door: d, onClose }: Props) {
                 checked={!!d.deadBolt}
                 onChange={(v) => upd({ deadBolt: v })}
               />
+              {hasPetDoor && !d.deadBolt && (
+                <p className="text-xs text-amber-600 -mt-2">Anlin requires a dead bolt on sliding doors with a doggie door.</p>
+              )}
               <Toggle
                 label={`Stainless Vent & Screen Rollers (+$${FLAT_OPTIONS.StainlessRollers})`}
                 checked={!!d.stainlessRollers}
                 onChange={(v) => upd({ stainlessRollers: v })}
               />
             </div>
+          )}
+        </div>
+
+        <div className="border-t pt-4 space-y-1">
+          <Select
+            label="Doggie Door (in-glass, dual flap)"
+            value={d.petDoor ?? 'None'}
+            onChange={(e) => {
+              const petDoor = e.target.value as PetDoorSize;
+              // Sliding doors with a pet door require a dead bolt.
+              upd(isSliding && petDoor !== 'None' ? { petDoor, deadBolt: true } : { petDoor });
+            }}
+            options={PET_DOOR_SELECT_OPTS}
+          />
+          {hasPetDoor && (
+            <p className="text-xs text-gray-500">
+              {isSliding
+                ? 'Dead bolt added (required). Not available with laminated security glass.'
+                : 'Not available in operable side-lite panels or with laminated security glass.'}
+            </p>
           )}
         </div>
 
